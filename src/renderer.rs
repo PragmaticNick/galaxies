@@ -133,7 +133,7 @@ impl Renderer {
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -157,7 +157,7 @@ impl Renderer {
             cache: None,
         });
 
-        let initial_capacity = 16 * 6; // 16 squares
+        let initial_capacity = 16 * 6;
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Vertex Buffer"),
             size: (initial_capacity * mem::size_of::<Vertex>()) as u64,
@@ -272,25 +272,21 @@ impl Renderer {
     }
 }
 
+const GLOW_FACTOR: f32 = 2.0;
+
 fn squares_to_vertices(squares: &[Square]) -> Vec<Vertex> {
     squares
         .iter()
         .flat_map(|s| {
             let [cx, cy] = s.center;
-            let r = s.radius;
+            let g = s.radius * GLOW_FACTOR;
             let c = s.color;
-            let tl = [cx - r, cy + r, 0.0];
-            let tr = [cx + r, cy + r, 0.0];
-            let bl = [cx - r, cy - r, 0.0];
-            let br = [cx + r, cy - r, 0.0];
-            [
-                Vertex { position: tl, color: c },
-                Vertex { position: bl, color: c },
-                Vertex { position: tr, color: c },
-                Vertex { position: tr, color: c },
-                Vertex { position: bl, color: c },
-                Vertex { position: br, color: c },
-            ]
+            let f = GLOW_FACTOR;
+            let tl = ([cx - g, cy + g, 0.0], [-f,  f]);
+            let tr = ([cx + g, cy + g, 0.0], [ f,  f]);
+            let bl = ([cx - g, cy - g, 0.0], [-f, -f]);
+            let br = ([cx + g, cy - g, 0.0], [ f, -f]);
+            [tl, bl, tr, tr, bl, br].map(|(position, local)| Vertex { position, color: c, local })
         })
         .collect()
 }
