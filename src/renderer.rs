@@ -1,10 +1,12 @@
+use std::mem;
 use std::sync::Arc;
 
 use wgpu::util::DeviceExt as _;
 use winit::window::Window;
 
 use crate::renderer::camera::CameraUniform;
-use crate::renderer::geometry::{Vertex, scaled_vertices};
+use crate::renderer::geometry::Vertex;
+use crate::square::Square;
 
 mod camera;
 mod geometry;
@@ -19,7 +21,7 @@ pub struct Renderer {
 
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
-    num_vertices: u32,
+    vertex_buffer_capacity: usize,
 
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
@@ -29,9 +31,6 @@ pub struct Renderer {
 impl Renderer {
     pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
         let size = window.inner_size();
-
-        let initial_vertices = scaled_vertices(size.width, size.height);
-        let num_vertices = initial_vertices.len() as u32;
         let camera_uniform = CameraUniform::new(size.width, size.height);
 
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
@@ -158,10 +157,12 @@ impl Renderer {
             cache: None,
         });
 
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let initial_capacity = 16 * 6; // 16 squares
+        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&initial_vertices),
+            size: (initial_capacity * mem::size_of::<Vertex>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
 
         Ok(Self {
@@ -173,7 +174,7 @@ impl Renderer {
             is_surface_configured: false,
             render_pipeline,
             vertex_buffer,
-            num_vertices,
+            vertex_buffer_capacity: initial_capacity,
             camera_uniform,
             camera_buffer,
             camera_bind_group,
@@ -192,17 +193,32 @@ impl Renderer {
                 0,
                 bytemuck::cast_slice(&[self.camera_uniform]),
             );
-            let verts = scaled_vertices(width, height);
-            self.queue
-                .write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&verts));
         }
     }
 
-    pub fn render(&mut self) -> anyhow::Result<()> {
+    pub fn render(&mut self, squares: &[Square]) -> anyhow::Result<()> {
         self.window.request_redraw();
 
         if !self.is_surface_configured {
             return Ok(());
+        }
+
+        let vertices = squares_to_vertices(squares);
+
+        if vertices.len() > self.vertex_buffer_capacity {
+            let new_capacity = vertices.len().next_power_of_two();
+            self.vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Vertex Buffer"),
+                size: (new_capacity * mem::size_of::<Vertex>()) as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.vertex_buffer_capacity = new_capacity;
+        }
+
+        if !vertices.is_empty() {
+            self.queue
+                .write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
         }
 
         let output = match self.surface.get_current_texture() {
@@ -246,7 +262,7 @@ impl Renderer {
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.draw(0..self.num_vertices, 0..1);
+            render_pass.draw(0..vertices.len() as u32, 0..1);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -254,4 +270,27 @@ impl Renderer {
 
         Ok(())
     }
+}
+
+fn squares_to_vertices(squares: &[Square]) -> Vec<Vertex> {
+    squares
+        .iter()
+        .flat_map(|s| {
+            let [cx, cy] = s.center;
+            let r = s.radius;
+            let c = s.color;
+            let tl = [cx - r, cy + r, 0.0];
+            let tr = [cx + r, cy + r, 0.0];
+            let bl = [cx - r, cy - r, 0.0];
+            let br = [cx + r, cy - r, 0.0];
+            [
+                Vertex { position: tl, color: c },
+                Vertex { position: bl, color: c },
+                Vertex { position: tr, color: c },
+                Vertex { position: tr, color: c },
+                Vertex { position: bl, color: c },
+                Vertex { position: br, color: c },
+            ]
+        })
+        .collect()
 }

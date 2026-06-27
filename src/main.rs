@@ -2,6 +2,7 @@ use winit::event_loop::EventLoop;
 
 mod app;
 mod renderer;
+pub mod square;
 
 pub fn run() -> anyhow::Result<()> {
     env_logger::init();
