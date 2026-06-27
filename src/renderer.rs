@@ -3,8 +3,10 @@ use std::sync::Arc;
 use wgpu::util::DeviceExt as _;
 use winit::window::Window;
 
-use crate::renderer::geometry::{VERTICES, Vertex};
+use crate::renderer::camera::CameraUniform;
+use crate::renderer::geometry::{Vertex, scaled_vertices};
 
+mod camera;
 mod geometry;
 
 pub struct Renderer {
@@ -17,15 +19,20 @@ pub struct Renderer {
 
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
-
     num_vertices: u32,
+
+    camera_uniform: CameraUniform,
+    camera_buffer: wgpu::Buffer,
+    camera_bind_group: wgpu::BindGroup,
 }
 
 impl Renderer {
     pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
         let size = window.inner_size();
 
-        let num_vertices = VERTICES.len() as u32;
+        let initial_vertices = scaled_vertices(size.width, size.height);
+        let num_vertices = initial_vertices.len() as u32;
+        let camera_uniform = CameraUniform::new(size.width, size.height);
 
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
@@ -74,12 +81,42 @@ impl Renderer {
             desired_maximum_frame_latency: 2,
         };
 
+        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Buffer"),
+            contents: bytemuck::cast_slice(&[camera_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Camera Bind Group Layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Camera Bind Group"),
+            layout: &camera_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
+        });
+
         let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[],
+                bind_group_layouts: &[&camera_bind_group_layout],
                 immediate_size: 0,
             });
 
@@ -123,8 +160,8 @@ impl Renderer {
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(VERTICES),
-            usage: wgpu::BufferUsages::VERTEX,
+            contents: bytemuck::cast_slice(&initial_vertices),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
 
         Ok(Self {
@@ -137,6 +174,9 @@ impl Renderer {
             render_pipeline,
             vertex_buffer,
             num_vertices,
+            camera_uniform,
+            camera_buffer,
+            camera_bind_group,
         })
     }
 
@@ -146,6 +186,15 @@ impl Renderer {
             self.config.height = height;
             self.surface.configure(&self.device, &self.config);
             self.is_surface_configured = true;
+            self.camera_uniform.resize(width, height);
+            self.queue.write_buffer(
+                &self.camera_buffer,
+                0,
+                bytemuck::cast_slice(&[self.camera_uniform]),
+            );
+            let verts = scaled_vertices(width, height);
+            self.queue
+                .write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&verts));
         }
     }
 
@@ -195,6 +244,7 @@ impl Renderer {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.draw(0..self.num_vertices, 0..1);
         }
