@@ -9,14 +9,30 @@ use winit::{
 };
 
 use crate::renderer::Renderer;
+use crate::square::Square;
 
 pub struct App {
     renderer: Option<Renderer>,
+    squares: Vec<Square>,
 }
 
 impl App {
     pub fn new() -> Self {
-        Self { renderer: None }
+        Self {
+            renderer: None,
+            squares: vec![
+                Square {
+                    center: [0.0, 0.0],
+                    radius: 100.0,
+                    color: [1.0, 0.2, 0.2],
+                },
+                Square {
+                    center: [200.0, 100.0],
+                    radius: 50.0,
+                    color: [0.2, 0.8, 0.2],
+                },
+            ],
+        }
     }
 
     fn handle_key(&self, event_loop: &ActiveEventLoop, code: KeyCode, is_pressed: bool) {
@@ -41,14 +57,14 @@ impl ApplicationHandler for App {
         event: winit::event::WindowEvent,
     ) {
         let renderer = match &mut self.renderer {
-            Some(canvas) => canvas,
+            Some(r) => r,
             None => return,
         };
 
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => renderer.resize(size.width, size.height),
-            WindowEvent::RedrawRequested => match renderer.render() {
+            WindowEvent::RedrawRequested => match renderer.render(&self.squares) {
                 Ok(_) => {}
                 Err(e) => {
                     log::error!("{e}");
