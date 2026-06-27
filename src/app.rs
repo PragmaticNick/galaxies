@@ -22,14 +22,19 @@ impl App {
             renderer: None,
             squares: vec![
                 Square {
-                    center: [0.0, 0.0],
-                    radius: 100.0,
+                    center: [-80.0, 0.0],
+                    radius: 150.0,
                     color: [1.0, 0.2, 0.2],
                 },
                 Square {
-                    center: [200.0, 100.0],
-                    radius: 50.0,
-                    color: [0.2, 0.8, 0.2],
+                    center: [80.0, 0.0],
+                    radius: 150.0,
+                    color: [0.2, 0.5, 1.0],
+                },
+                Square {
+                    center: [0.0, 100.0],
+                    radius: 100.0,
+                    color: [0.2, 0.9, 0.3],
                 },
             ],
         }
