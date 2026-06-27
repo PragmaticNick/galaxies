@@ -29,12 +29,12 @@ impl App {
                 Square {
                     center: [80.0, 0.0],
                     radius: 150.0,
-                    color: [0.2, 0.5, 1.0],
+                    color: [1.0, 0.2, 0.2],
                 },
                 Square {
                     center: [0.0, 100.0],
                     radius: 100.0,
-                    color: [0.2, 0.9, 0.3],
+                    color: [1.0, 0.2, 0.2],
                 },
             ],
         }
