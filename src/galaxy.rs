@@ -2,61 +2,53 @@ use std::f32::consts::PI;
 
 use rand::RngExt;
 
-use crate::square::Square;
+use crate::star::Star;
+
+pub const G: f32 = 100.0;
 
 pub struct GalaxyConfig {
     pub center: [f32; 2],
     pub radius: f32,
     pub star_count: u32,
     pub core_mass: f32,
-
-    pub arm_count: u32,
-    pub arm_rotation_factor: f32,
-    pub arm_max_offset: f32,
-
     pub star_mass: f32,
     pub star_radius: f32,
-
-    pub gap: f32,
 }
 
-pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Square> {
-    let mut result = vec![];
-    result.push(Square {
-        center: config.center,
-        radius: config.star_radius * 3.0,
-        color: [1.0, 0.2, 0.2],
-    });
-
+pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Star> {
     let mut rng = rand::rng();
-    let arm_angle = 2.0 * PI / config.arm_count as f32;
-    println!("{}", arm_angle);
+
+    let mut stars = vec![Star {
+        pos: config.center,
+        vel: [0.0, 0.0],
+        mass: config.core_mass,
+        radius: config.star_radius * 3.0,
+        color: [1.0, 1.0, 1.0],
+    }];
 
     for _ in 0..config.star_count {
-        let mut r: f32 = rng.random();
-        let mut phi: f32 = 2.0 * PI * rng.random::<f32>();
-        let arm_offset: f32 = config.arm_max_offset * (rng.random::<f32>() - 0.5) / r;
+        let r = config.radius * rng.random::<f32>().sqrt();
+        let theta = 2.0 * PI * rng.random::<f32>();
 
-        let mut squared_arm_offset = arm_offset * arm_offset;
-        if arm_offset < 0.0 {
-            squared_arm_offset *= -1.0;
-        }
+        let v = (G * config.core_mass / r.max(1.0)).sqrt();
 
-        phi = (phi / arm_angle).floor() * arm_angle
-            + r * config.arm_rotation_factor
-            + squared_arm_offset;
-        r = config.gap + r * (config.radius - config.gap);
-        let x = config.center[0] + r * phi.cos();
-        let y = config.center[1] + r * phi.sin();
+        // Warm golden-white core → cool blue-white edge.
+        let t = r / config.radius;
+        let brightness = 0.30 + 0.20 * (1.0 - t);
+        let color = [
+            (1.0 - t * 0.35) * brightness,
+            (0.90 - t * 0.05) * brightness,
+            (0.55 + t * 0.45) * brightness,
+        ];
 
-        // let M = config.core_mass + config.star_mass;
-
-        result.push(Square {
-            center: [x, y],
+        stars.push(Star {
+            pos: [config.center[0] + r * theta.cos(), config.center[1] + r * theta.sin()],
+            vel: [-theta.sin() * v, theta.cos() * v],
+            mass: config.star_mass,
             radius: config.star_radius,
-            color: [1.0, 0.2, 0.2],
+            color,
         });
     }
 
-    result
+    stars
 }

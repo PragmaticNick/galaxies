@@ -25,14 +25,9 @@ impl App {
             center: [0.0, 0.0],
             radius: 300.0,
             star_count: 1000,
+            core_mass: 50000.0,
             star_mass: 0.1,
             star_radius: 2.0,
-            arm_count: 4,
-            arm_rotation_factor: 2.5,
-            arm_max_offset: 0.25,
-            gap: 10.0,
-            core_mass: 50000.0,
-            bulge_fraction: 0.25,
         };
 
         Self {
@@ -48,7 +43,6 @@ impl App {
             _ => {}
         }
     }
-
 }
 
 impl ApplicationHandler for App {
@@ -79,9 +73,7 @@ impl ApplicationHandler for App {
                     None => 0.0,
                 };
                 self.last_frame = Some(now);
-
                 update_physics(&mut self.stars, dt);
-
                 match renderer.render(&self.stars) {
                     Ok(_) => {}
                     Err(e) => {
@@ -104,7 +96,7 @@ impl ApplicationHandler for App {
     }
 }
 
-fn update_physics(stars: &mut Vec<Star>, dt: f32) {
+fn update_physics(stars: &mut [Star], dt: f32) {
     let n = stars.len();
     let mut ax = vec![0.0f32; n];
     let mut ay = vec![0.0f32; n];
@@ -126,6 +118,7 @@ fn update_physics(stars: &mut Vec<Star>, dt: f32) {
     }
 }
 
+/// F = G * m1 * m2 / r²
 fn gravity(s: &Star, t: &Star) -> [f32; 2] {
     const SOFTENING2: f32 = 400.0;
     let dx = t.pos[0] - s.pos[0];
