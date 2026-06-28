@@ -11,7 +11,7 @@ use winit::window::Window;
 use crate::renderer::camera::CameraUniform;
 use crate::renderer::fps::FpsCounter;
 use crate::renderer::geometry::Vertex;
-use crate::square::Square;
+use crate::star::Star;
 
 mod camera;
 mod fps;
@@ -90,7 +90,7 @@ impl Renderer {
         }
     }
 
-    pub fn render(&mut self, squares: &[Square]) -> anyhow::Result<()> {
+    pub fn render(&mut self, stars: &[Star]) -> anyhow::Result<()> {
         self.window.request_redraw();
 
         if !self.is_surface_configured {
@@ -99,7 +99,7 @@ impl Renderer {
 
         self.tick_fps();
         self.prepare_text();
-        let num_vertices = self.upload_vertices(squares);
+        let num_vertices = self.upload_vertices(stars);
 
         let output = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
@@ -187,8 +187,8 @@ impl Renderer {
             .unwrap();
     }
 
-    fn upload_vertices(&mut self, squares: &[Square]) -> usize {
-        let vertices = squares_to_vertices(squares);
+    fn upload_vertices(&mut self, stars: &[Star]) -> usize {
+        let vertices = stars_to_vertices(stars);
         if vertices.len() > self.vertex_buffer_capacity {
             let new_capacity = vertices.len().next_power_of_two();
             self.vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -398,13 +398,13 @@ fn init_text(
 }
 
 
-const GLOW_FACTOR: f32 = 2.0;
+const GLOW_FACTOR: f32 = 3.5;
 
-fn squares_to_vertices(squares: &[Square]) -> Vec<Vertex> {
-    squares
+fn stars_to_vertices(stars: &[Star]) -> Vec<Vertex> {
+    stars
         .iter()
         .flat_map(|s| {
-            let [cx, cy] = s.center;
+            let [cx, cy] = s.pos;
             let g = s.radius * GLOW_FACTOR;
             let c = s.color;
             let f = GLOW_FACTOR;

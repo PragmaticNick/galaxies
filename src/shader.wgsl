@@ -26,20 +26,19 @@ fn vs_main(model: VertexInput) -> VertexOutput {
     return out;
 }
 
+const GLOW_FACTOR: f32 = 3.5;
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // local coords: 0=center, 1=circle edge, 2=quad edge (GLOW_FACTOR=2)
     let dist = length(in.local);
 
-    // Solid circle with soft edge
     let circle = 1.0 - smoothstep(0.85, 1.0, dist);
 
-    // Glow halo: exponential falloff from circle edge to quad edge
-    let glow_t = clamp(dist - 1.0, 0.0, 1.0);   // 0 at circle edge, 1 at quad edge
-    let glow = pow(1.0 - glow_t, 3.0) * 0.85;
+    let glow_t = clamp((dist - 1.0) / (GLOW_FACTOR - 1.0), 0.0, 1.0);
+    let glow = pow(1.0 - glow_t, 1.6) * 1.5;
 
     let alpha = circle + (1.0 - circle) * glow;
-    if alpha < 0.005 { discard; }
+    if alpha < 0.004 { discard; }
 
     return vec4<f32>(in.color, alpha);
 }
