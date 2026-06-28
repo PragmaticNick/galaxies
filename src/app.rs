@@ -8,8 +8,8 @@ use winit::{
     window::Window,
 };
 
-use crate::renderer::Renderer;
-use crate::square::Square;
+use crate::{galaxy::GalaxyConfig, renderer::Renderer};
+use crate::{galaxy::generate_galaxy, square::Square};
 
 pub struct App {
     renderer: Option<Renderer>,
@@ -18,25 +18,22 @@ pub struct App {
 
 impl App {
     pub fn new() -> Self {
+        let config = GalaxyConfig {
+            center: [0.0, 0.0],
+            radius: 300.0,
+            star_count: 3000,
+            star_mass: 10.0,
+            star_radius: 2.0,
+            arm_count: 10,
+            arm_rotation_factor: 3.0,
+            arm_max_offset: 0.6,
+            gap: 10.0,
+            core_mass: 1000000.0,
+        };
+
         Self {
             renderer: None,
-            squares: vec![
-                Square {
-                    center: [-80.0, 0.0],
-                    radius: 150.0,
-                    color: [1.0, 0.2, 0.2],
-                },
-                Square {
-                    center: [80.0, 0.0],
-                    radius: 150.0,
-                    color: [1.0, 0.2, 0.2],
-                },
-                Square {
-                    center: [0.0, 100.0],
-                    radius: 100.0,
-                    color: [1.0, 0.2, 0.2],
-                },
-            ],
+            squares: generate_galaxy(&config),
         }
     }
 
