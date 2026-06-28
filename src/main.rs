@@ -3,7 +3,7 @@ use winit::event_loop::EventLoop;
 mod app;
 pub mod galaxy;
 mod renderer;
-pub mod square;
+pub mod star;
 
 pub fn run() -> anyhow::Result<()> {
     env_logger::init();

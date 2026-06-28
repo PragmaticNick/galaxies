@@ -1,0 +1,7 @@
+pub struct Star {
+    pub pos: [f32; 2],
+    pub vel: [f32; 2],
+    pub mass: f32,
+    pub radius: f32,
+    pub color: [f32; 3],
+}
