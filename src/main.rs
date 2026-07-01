@@ -2,6 +2,7 @@ use winit::event_loop::EventLoop;
 
 mod app;
 pub mod galaxy;
+mod physics;
 mod renderer;
 pub mod star;
 

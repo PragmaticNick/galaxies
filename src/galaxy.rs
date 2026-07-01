@@ -2,9 +2,8 @@ use std::f32::consts::PI;
 
 use rand::RngExt;
 
+use crate::physics::G;
 use crate::star::Star;
-
-pub const G: f32 = 100.0;
 
 pub struct GalaxyConfig {
     pub center: [f32; 2],
