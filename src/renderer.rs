@@ -97,7 +97,7 @@ impl Renderer {
             return Ok(());
         }
 
-        self.tick_fps();
+        self.tick_fps(stars.len());
         self.prepare_text();
         let num_vertices = self.upload_vertices(stars);
 
@@ -144,9 +144,9 @@ impl Renderer {
         Ok(())
     }
 
-    fn tick_fps(&mut self) {
+    fn tick_fps(&mut self, star_count: usize) {
         if let Some(fps) = self.fps_counter.tick() {
-            let text = format!("FPS: {:.0}", fps);
+            let text = format!("FPS: {:.0}\nStars: {}", fps, star_count);
             self.fps_buffer.set_text(
                 &mut self.font_system,
                 &text,
@@ -178,7 +178,7 @@ impl Renderer {
                     left: 10.0,
                     top: 10.0,
                     scale: 1.0,
-                    bounds: TextBounds { left: 0, top: 0, right: 300, bottom: 48 },
+                    bounds: TextBounds { left: 0, top: 0, right: 300, bottom: 96 },
                     default_color: Color::rgb(255, 255, 255),
                     custom_glyphs: &[],
                 }],
@@ -385,7 +385,7 @@ fn init_text(
     let mut atlas = TextAtlas::new(device, queue, &cache, format);
     let renderer = TextRenderer::new(&mut atlas, device, wgpu::MultisampleState::default(), None);
     let mut fps_buffer = Buffer::new(&mut font_system, Metrics::new(32.0, 40.0));
-    fps_buffer.set_size(&mut font_system, Some(300.0), Some(48.0));
+    fps_buffer.set_size(&mut font_system, Some(300.0), Some(96.0));
     fps_buffer.set_text(
         &mut font_system,
         "FPS: --",

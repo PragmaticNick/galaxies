@@ -17,23 +17,29 @@ pub struct App {
     renderer: Option<Renderer>,
     stars: Vec<Star>,
     last_frame: Option<Instant>,
+    time: f32,
 }
 
 impl App {
     pub fn new() -> Self {
         let config = GalaxyConfig {
             center: [0.0, 0.0],
-            radius: 300.0,
+            radius: 600.0,
             star_count: 1000,
             core_mass: 50000.0,
+            arm_count: 4,
+            arm_rotation_factor: 4.0,
+            arm_max_offset: 0.4,
             star_mass: 0.1,
             star_radius: 2.0,
+            gap: 20.0,
         };
 
         Self {
             renderer: None,
             stars: generate_galaxy(&config),
             last_frame: None,
+            time: 0.0,
         }
     }
 
@@ -73,7 +79,8 @@ impl ApplicationHandler for App {
                     None => 0.0,
                 };
                 self.last_frame = Some(now);
-                update_physics(&mut self.stars, dt);
+                self.time += dt;
+                update_physics(&mut self.stars, dt, self.time);
                 match renderer.render(&self.stars) {
                     Ok(_) => {}
                     Err(e) => {
@@ -96,7 +103,7 @@ impl ApplicationHandler for App {
     }
 }
 
-fn update_physics(stars: &mut [Star], dt: f32) {
+fn update_physics(stars: &mut [Star], dt: f32, time: f32) {
     let n = stars.len();
     let mut ax = vec![0.0f32; n];
     let mut ay = vec![0.0f32; n];
@@ -118,7 +125,6 @@ fn update_physics(stars: &mut [Star], dt: f32) {
     }
 }
 
-/// F = G * m1 * m2 / r²
 fn gravity(s: &Star, t: &Star) -> [f32; 2] {
     const SOFTENING2: f32 = 400.0;
     let dx = t.pos[0] - s.pos[0];
