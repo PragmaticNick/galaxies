@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use rayon::prelude::*;
+
 use winit::{
     application::ApplicationHandler,
     event::{KeyEvent, WindowEvent},
@@ -13,11 +15,27 @@ use crate::galaxy::{generate_galaxy, GalaxyConfig, G};
 use crate::renderer::Renderer;
 use crate::star::Star;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PhysicsStrategy {
+    PlainLoop,
+    Rayon,
+}
+
+impl PhysicsStrategy {
+    fn name(&self) -> &'static str {
+        match self {
+            PhysicsStrategy::PlainLoop => "plain loop",
+            PhysicsStrategy::Rayon => "rayon",
+        }
+    }
+}
+
 pub struct App {
     renderer: Option<Renderer>,
     stars: Vec<Star>,
     last_frame: Option<Instant>,
     time: f32,
+    strategy: PhysicsStrategy,
 }
 
 impl App {
@@ -40,13 +58,23 @@ impl App {
             stars: generate_galaxy(&config),
             last_frame: None,
             time: 0.0,
+            strategy: PhysicsStrategy::PlainLoop,
         }
     }
 
-    fn handle_key(&self, event_loop: &ActiveEventLoop, code: KeyCode, is_pressed: bool) {
+    fn handle_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, is_pressed: bool) {
         match (code, is_pressed) {
             (KeyCode::Escape, true) => event_loop.exit(),
+            (KeyCode::Digit1, true) => self.set_strategy(PhysicsStrategy::PlainLoop),
+            (KeyCode::Digit2, true) => self.set_strategy(PhysicsStrategy::Rayon),
             _ => {}
+        }
+    }
+
+    fn set_strategy(&mut self, strategy: PhysicsStrategy) {
+        if self.strategy != strategy {
+            self.strategy = strategy;
+            log::info!("physics strategy: {}", strategy.name());
         }
     }
 }
@@ -80,7 +108,7 @@ impl ApplicationHandler for App {
                 };
                 self.last_frame = Some(now);
                 self.time += dt;
-                update_physics(&mut self.stars, dt, self.time);
+                update_physics(&mut self.stars, dt, self.strategy);
                 match renderer.render(&self.stars) {
                     Ok(_) => {}
                     Err(e) => {
@@ -103,26 +131,52 @@ impl ApplicationHandler for App {
     }
 }
 
-fn update_physics(stars: &mut [Star], dt: f32, time: f32) {
-    let n = stars.len();
-    let mut ax = vec![0.0f32; n];
-    let mut ay = vec![0.0f32; n];
+fn update_physics(stars: &mut [Star], dt: f32, strategy: PhysicsStrategy) {
+    let accels = match strategy {
+        PhysicsStrategy::PlainLoop => accels_plain(stars),
+        PhysicsStrategy::Rayon => accels_rayon(stars),
+    };
 
-    for i in 1..n {
-        for j in 0..n {
-            if i == j { continue; }
-            let [fx, fy] = gravity(&stars[i], &stars[j]);
-            ax[i] += fx / stars[i].mass;
-            ay[i] += fy / stars[i].mass;
-        }
-    }
-
-    for i in 1..n {
-        stars[i].vel[0] += ax[i] * dt;
-        stars[i].vel[1] += ay[i] * dt;
+    for i in 1..stars.len() {
+        stars[i].vel[0] += accels[i][0] * dt;
+        stars[i].vel[1] += accels[i][1] * dt;
         stars[i].pos[0] += stars[i].vel[0] * dt;
         stars[i].pos[1] += stars[i].vel[1] * dt;
     }
+}
+
+// O(n^2) accel, single-threaded
+fn accels_plain(stars: &[Star]) -> Vec<[f32; 2]> {
+    let n = stars.len();
+    (0..n)
+        .map(|i| body_accel(stars, i))
+        .collect()
+}
+
+fn accels_rayon(stars: &[Star]) -> Vec<[f32; 2]> {
+    let n = stars.len();
+    (0..n)
+        .into_par_iter()
+        .map(|i| body_accel(stars, i))
+        .collect()
+}
+
+fn body_accel(stars: &[Star], i: usize) -> [f32; 2] {
+    if i == 0 {
+        return [0.0, 0.0];
+    }
+    let si = &stars[i];
+    let mut ax = 0.0;
+    let mut ay = 0.0;
+    for j in 0..stars.len() {
+        if i == j {
+            continue;
+        }
+        let [fx, fy] = gravity(si, &stars[j]);
+        ax += fx / si.mass;
+        ay += fy / si.mass;
+    }
+    [ax, ay]
 }
 
 fn gravity(s: &Star, t: &Star) -> [f32; 2] {
