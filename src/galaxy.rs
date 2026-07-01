@@ -57,7 +57,6 @@ pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Star> {
     stars
 }
 
-// 3-stop gradient: white (center) → yellow (mid) → purple (edge)
 fn arm_color(t: f32) -> [f32; 3] {
     const WHITE: [f32; 3] = [1.0, 1.0, 1.0];
     const YELLOW: [f32; 3] = [1.0, 0.85, 0.3];
