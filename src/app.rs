@@ -27,7 +27,7 @@ impl App {
         let config = GalaxyConfig {
             center: [0.0, 0.0],
             radius: 600.0,
-            star_count: 3000,
+            star_count: 10000,
             core_mass: 50000.0,
             arm_count: 4,
             arm_rotation_factor: 4.0,
@@ -42,7 +42,7 @@ impl App {
             stars: generate_galaxy(&config),
             last_frame: None,
             time: 0.0,
-            strategy: PhysicsStrategy::PlainLoop,
+            strategy: PhysicsStrategy::Rayon,
         }
     }
 
@@ -51,6 +51,7 @@ impl App {
             (KeyCode::Escape, true) => event_loop.exit(),
             (KeyCode::Digit1, true) => self.set_strategy(PhysicsStrategy::PlainLoop),
             (KeyCode::Digit2, true) => self.set_strategy(PhysicsStrategy::Rayon),
+            (KeyCode::Digit3, true) => self.set_strategy(PhysicsStrategy::Fmm),
             _ => {}
         }
     }
