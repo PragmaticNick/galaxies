@@ -40,6 +40,8 @@ pub struct Renderer {
     text_renderer: TextRenderer,
     fps_buffer: Buffer,
     fps_counter: FpsCounter,
+    last_fps: f32,
+    hud_strategy: String,
 }
 
 impl Renderer {
@@ -72,6 +74,8 @@ impl Renderer {
             text_renderer,
             fps_buffer,
             fps_counter: FpsCounter::new(),
+            last_fps: 0.0,
+            hud_strategy: String::new(),
         })
     }
 
@@ -90,14 +94,14 @@ impl Renderer {
         }
     }
 
-    pub fn render(&mut self, stars: &[Star]) -> anyhow::Result<()> {
+    pub fn render(&mut self, stars: &[Star], strategy: &str) -> anyhow::Result<()> {
         self.window.request_redraw();
 
         if !self.is_surface_configured {
             return Ok(());
         }
 
-        self.tick_fps(stars.len());
+        self.tick_fps(stars.len(), strategy);
         self.prepare_text();
         let num_vertices = self.upload_vertices(stars);
 
@@ -144,9 +148,22 @@ impl Renderer {
         Ok(())
     }
 
-    fn tick_fps(&mut self, star_count: usize) {
-        if let Some(fps) = self.fps_counter.tick() {
-            let text = format!("FPS: {:.0}\nStars: {}", fps, star_count);
+    fn tick_fps(&mut self, star_count: usize, strategy: &str) {
+        let fps_changed = match self.fps_counter.tick() {
+            Some(fps) => {
+                self.last_fps = fps;
+                true
+            }
+            None => false,
+        };
+        let strategy_changed = self.hud_strategy != strategy;
+
+        if fps_changed || strategy_changed {
+            self.hud_strategy = strategy.to_string();
+            let text = format!(
+                "FPS: {:.0}\nStars: {}\nStrategy: {}",
+                self.last_fps, star_count, strategy
+            );
             self.fps_buffer.set_text(
                 &mut self.font_system,
                 &text,
@@ -178,7 +195,7 @@ impl Renderer {
                     left: 10.0,
                     top: 10.0,
                     scale: 1.0,
-                    bounds: TextBounds { left: 0, top: 0, right: 300, bottom: 96 },
+                    bounds: TextBounds { left: 0, top: 0, right: 600, bottom: 144 },
                     default_color: Color::rgb(255, 255, 255),
                     custom_glyphs: &[],
                 }],
@@ -385,7 +402,7 @@ fn init_text(
     let mut atlas = TextAtlas::new(device, queue, &cache, format);
     let renderer = TextRenderer::new(&mut atlas, device, wgpu::MultisampleState::default(), None);
     let mut fps_buffer = Buffer::new(&mut font_system, Metrics::new(32.0, 40.0));
-    fps_buffer.set_size(&mut font_system, Some(300.0), Some(96.0));
+    fps_buffer.set_size(&mut font_system, Some(600.0), Some(144.0));
     fps_buffer.set_text(
         &mut font_system,
         "FPS: --",
