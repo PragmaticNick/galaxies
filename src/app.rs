@@ -27,7 +27,7 @@ impl App {
         let config = GalaxyConfig {
             center: [0.0, 0.0],
             radius: 600.0,
-            star_count: 10000,
+            star_count: 4000,
             core_mass: 50000.0,
             arm_count: 4,
             arm_rotation_factor: 4.0,
@@ -51,7 +51,8 @@ impl App {
             (KeyCode::Escape, true) => event_loop.exit(),
             (KeyCode::Digit1, true) => self.set_strategy(PhysicsStrategy::PlainLoop),
             (KeyCode::Digit2, true) => self.set_strategy(PhysicsStrategy::Rayon),
-            (KeyCode::Digit3, true) => self.set_strategy(PhysicsStrategy::Fmm),
+            (KeyCode::Digit3, true) => self.set_strategy(PhysicsStrategy::FmmSerial),
+            (KeyCode::Digit4, true) => self.set_strategy(PhysicsStrategy::FmmRayon),
             _ => {}
         }
     }

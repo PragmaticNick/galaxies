@@ -1,24 +1,69 @@
 mod multipole;
 mod tree;
 
+use rayon::prelude::*;
+
 use super::gravity;
 use crate::star::Star;
 use tree::{admissible, Tree};
 
 pub const THETA: f32 = 0.5;
 
-pub fn accels(stars: &[Star]) -> Vec<[f32; 2]> {
-    let n = stars.len();
-    if n == 0 {
+/// Single-threaded: walk each target leaf in sequence.
+pub fn accels_serial(stars: &[Star]) -> Vec<[f32; 2]> {
+    if stars.is_empty() {
         return Vec::new();
     }
+    let (tree, leaves) = prepare(stars);
+    let contributions: Vec<(usize, [f32; 2])> = leaves
+        .iter()
+        .flat_map(|&t| leaf_forces(&tree, t, stars))
+        .collect();
+    finalize(contributions, stars)
+}
 
+/// Parallel: each target leaf owns a disjoint particle range, so leaves are
+/// processed across cores without contention.
+pub fn accels_rayon(stars: &[Star]) -> Vec<[f32; 2]> {
+    if stars.is_empty() {
+        return Vec::new();
+    }
+    let (tree, leaves) = prepare(stars);
+    let contributions: Vec<(usize, [f32; 2])> = leaves
+        .par_iter()
+        .flat_map_iter(|&t| leaf_forces(&tree, t, stars))
+        .collect();
+    finalize(contributions, stars)
+}
+
+fn prepare(stars: &[Star]) -> (Tree, Vec<usize>) {
     let mut tree = Tree::build(stars);
     assemble_multipoles(&mut tree, stars);
+    let leaves = (0..tree.nodes.len())
+        .filter(|&i| tree.nodes[i].is_leaf())
+        .collect();
+    (tree, leaves)
+}
 
-    let mut forces = vec![[0.0f32; 2]; n];
-    traverse(&tree, tree.root, tree.root, stars, &mut forces);
+/// Forces on target leaf `t`'s particles from the whole tree. A leaf's targets
+/// are fixed, so only the source tree is descended.
+fn leaf_forces<'a>(
+    tree: &'a Tree,
+    t: usize,
+    stars: &'a [Star],
+) -> impl Iterator<Item = (usize, [f32; 2])> + 'a {
+    let (ts, te) = (tree.nodes[t].start, tree.nodes[t].end);
+    let targets = &tree.order[ts..te];
+    let mut local = vec![[0.0f32; 2]; targets.len()];
+    accumulate(tree, tree.root, t, targets, stars, &mut local);
+    targets.iter().copied().zip(local)
+}
 
+fn finalize(contributions: Vec<(usize, [f32; 2])>, stars: &[Star]) -> Vec<[f32; 2]> {
+    let mut forces = vec![[0.0f32; 2]; stars.len()];
+    for (i, f) in contributions {
+        forces[i] = f;
+    }
     forces
         .iter()
         .zip(stars)
@@ -42,55 +87,44 @@ fn assemble_multipoles(tree: &mut Tree, stars: &[Star]) {
     }
 }
 
-fn traverse(tree: &Tree, s: usize, t: usize, stars: &[Star], forces: &mut [[f32; 2]]) {
-    let nodes = &tree.nodes;
-    let order = &tree.order;
-    let s_leaf = nodes[s].is_leaf();
-    let t_leaf = nodes[t].is_leaf();
+/// Accumulate force on each particle of target leaf `t` (its bodies are
+/// `targets`, with `local` aligned to them) from source subtree `source`.
+fn accumulate(
+    tree: &Tree,
+    source: usize,
+    t: usize,
+    targets: &[usize],
+    stars: &[Star],
+    local: &mut [[f32; 2]],
+) {
+    if admissible(&tree.nodes[source], &tree.nodes[t]) {
+        let m = tree.nodes[source].m;
+        for (k, &ti) in targets.iter().enumerate() {
+            let [fx, fy] = m.eval(stars[ti].pos, stars[ti].mass);
+            local[k][0] += fx;
+            local[k][1] += fy;
+        }
+        return;
+    }
 
-    if s_leaf && t_leaf {
-        let (ss, se) = (nodes[s].start, nodes[s].end);
-        let (ts, te) = (nodes[t].start, nodes[t].end);
-        for &ti in &order[ts..te] {
+    if tree.nodes[source].is_leaf() {
+        let (ss, se) = (tree.nodes[source].start, tree.nodes[source].end);
+        for (k, &ti) in targets.iter().enumerate() {
             let mut fx = 0.0;
             let mut fy = 0.0;
-            for &si in &order[ss..se] {
+            for &si in &tree.order[ss..se] {
                 let [dx, dy] = gravity(&stars[ti], &stars[si]);
                 fx += dx;
                 fy += dy;
             }
-            forces[ti][0] += fx;
-            forces[ti][1] += fy;
+            local[k][0] += fx;
+            local[k][1] += fy;
         }
         return;
     }
 
-    if admissible(&nodes[s], &nodes[t]) {
-        let (ts, te) = (nodes[t].start, nodes[t].end);
-        let m = nodes[s].m;
-        for &ti in &order[ts..te] {
-            let [fx, fy] = m.eval(stars[ti].pos, stars[ti].mass);
-            forces[ti][0] += fx;
-            forces[ti][1] += fy;
-        }
-        return;
-    }
-
-    let split_source = if s_leaf {
-        false
-    } else if t_leaf {
-        true
-    } else {
-        nodes[s].radius >= nodes[t].radius
-    };
-
-    if split_source {
-        traverse(tree, nodes[s].left.unwrap(), t, stars, forces);
-        traverse(tree, nodes[s].right.unwrap(), t, stars, forces);
-    } else {
-        traverse(tree, s, nodes[t].left.unwrap(), stars, forces);
-        traverse(tree, s, nodes[t].right.unwrap(), stars, forces);
-    }
+    accumulate(tree, tree.nodes[source].left.unwrap(), t, targets, stars, local);
+    accumulate(tree, tree.nodes[source].right.unwrap(), t, targets, stars, local);
 }
 
 #[cfg(test)]
@@ -116,10 +150,16 @@ mod tests {
     }
 
     #[test]
+    fn serial_matches_rayon() {
+        let stars = make_stars(1500);
+        assert_eq!(accels_serial(&stars), accels_rayon(&stars));
+    }
+
+    #[test]
     fn fmm_matches_direct() {
         let stars = make_stars(1500);
         let exact = direct::accels_plain(&stars);
-        let approx = accels(&stars);
+        let approx = accels_serial(&stars);
 
         let mut max_rel = 0.0f32;
         let mut sum_rel = 0.0f32;

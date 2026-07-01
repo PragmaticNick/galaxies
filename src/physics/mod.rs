@@ -10,7 +10,8 @@ pub const G: f32 = 100.0;
 pub enum PhysicsStrategy {
     PlainLoop,
     Rayon,
-    Fmm,
+    FmmSerial,
+    FmmRayon,
 }
 
 impl PhysicsStrategy {
@@ -18,7 +19,8 @@ impl PhysicsStrategy {
         match self {
             PhysicsStrategy::PlainLoop => "plain loop",
             PhysicsStrategy::Rayon => "rayon",
-            PhysicsStrategy::Fmm => "fmm (multipole)",
+            PhysicsStrategy::FmmSerial => "fmm (serial)",
+            PhysicsStrategy::FmmRayon => "fmm (rayon)",
         }
     }
 }
@@ -29,7 +31,8 @@ pub fn update_physics(stars: &mut [Star], dt: f32, strategy: PhysicsStrategy) {
     let accels = match strategy {
         PhysicsStrategy::PlainLoop => direct::accels_plain(stars),
         PhysicsStrategy::Rayon => direct::accels_rayon(stars),
-        PhysicsStrategy::Fmm => fmm::accels(stars),
+        PhysicsStrategy::FmmSerial => fmm::accels_serial(stars),
+        PhysicsStrategy::FmmRayon => fmm::accels_rayon(stars),
     };
 
     for i in 1..stars.len() {
