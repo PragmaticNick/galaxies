@@ -87,7 +87,7 @@ impl ApplicationHandler for App {
                 };
                 self.last_frame = Some(now);
                 self.time += dt;
-                match renderer.render(self.stars.len()) {
+                match renderer.render(self.stars.len(), dt) {
                     Ok(_) => {}
                     Err(e) => {
                         log::error!("{e}");

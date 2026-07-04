@@ -9,6 +9,11 @@ struct Star {
 
 @group(0) @binding(0) var<storage, read_write> stars: array<Star>;
 
+struct SimParams {
+    dt: f32,
+};
+@group(0) @binding(1) var<uniform> sim: SimParams;
+
 @compute
 @workgroup_size(64)
 fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
@@ -19,5 +24,5 @@ fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
         return;
     }
 
-    stars[index].pos += vec2(1.0, 1.0);
+    stars[index].pos += stars[index].vel * sim.dt;
 }

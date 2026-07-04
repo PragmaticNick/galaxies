@@ -29,6 +29,7 @@ pub struct Renderer {
     star_buffer: wgpu::Buffer,
     star_render_bind_group: wgpu::BindGroup,
     star_compute_bind_group: wgpu::BindGroup,
+    sim_buffer: wgpu::Buffer,
 
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
@@ -47,15 +48,49 @@ pub struct Renderer {
 impl Renderer {
     pub async fn new(window: Arc<Window>, stars: &[Star]) -> anyhow::Result<Self> {
         let (surface, device, queue, config) = init_wgpu(window.clone()).await?;
-        let (camera_uniform, camera_buffer, camera_layout, camera_bind_group) =
-            init_camera(&device, config.width, config.height);
+        let (camera_uniform, camera_buffer) = init_camera(&device, config.width, config.height);
+        let star_buffer = init_star_buffer(&device, &queue, stars);
 
-        let stars_gpu = init_star_buffers(&device, &queue, stars);
+        // Simulation params for the compute kernel. 16 bytes: dt as f32 + padding
+        // (uniform buffers round up to a 16-byte stride).
+        let sim_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Sim Params Buffer"),
+            size: 16,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
-        let compute_pipeline = init_compute_pipeline(&device, &stars_gpu.compute_layout);
+        let render_pipeline = init_pipeline(&device, config.format);
+        let compute_pipeline = init_compute_pipeline(&device);
 
-        let render_pipeline =
-            init_pipeline(&device, config.format, &camera_layout, &stars_gpu.render_layout);
+        // Bind groups use the pipelines' auto-derived layouts, so access mode and
+        // visibility always match the shaders. Render group 0 = camera, 1 = stars.
+        let camera_bind_group = buffer_bind_group(
+            &device,
+            "Camera Bind Group",
+            &render_pipeline.get_bind_group_layout(0),
+            &camera_buffer,
+        );
+        let star_render_bind_group = buffer_bind_group(
+            &device,
+            "Star Render Bind Group",
+            &render_pipeline.get_bind_group_layout(1),
+            &star_buffer,
+        );
+        let star_compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Star Compute Bind Group"),
+            layout: &compute_pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: star_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: sim_buffer.as_entire_binding(),
+                },
+            ],
+        });
 
         let (font_system, swash_cache, text_viewport, text_atlas, text_renderer, fps_buffer) =
             init_text(&device, &queue, config.format);
@@ -69,9 +104,10 @@ impl Renderer {
             is_surface_configured: false,
             compute_pipeline,
             render_pipeline,
-            star_buffer: stars_gpu.buffer,
-            star_render_bind_group: stars_gpu.render_bind_group,
-            star_compute_bind_group: stars_gpu.compute_bind_group,
+            star_buffer,
+            star_render_bind_group,
+            star_compute_bind_group,
+            sim_buffer,
             camera_uniform,
             camera_buffer,
             camera_bind_group,
@@ -105,13 +141,16 @@ impl Renderer {
         self.window.request_redraw();
     }
 
-    pub fn render(&mut self, star_count: usize) -> anyhow::Result<()> {
+    pub fn render(&mut self, star_count: usize, dt: f32) -> anyhow::Result<()> {
         if !self.is_surface_configured {
             return Ok(());
         }
 
         self.tick_fps(star_count);
         self.prepare_text();
+
+        self.queue
+            .write_buffer(&self.sim_buffer, 0, bytemuck::cast_slice(&[dt, 0.0, 0.0, 0.0]));
 
         let output = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t)
@@ -287,55 +326,17 @@ async fn init_wgpu(
     Ok((surface, device, queue, config))
 }
 
-fn init_camera(
-    device: &wgpu::Device,
-    width: u32,
-    height: u32,
-) -> (
-    CameraUniform,
-    wgpu::Buffer,
-    wgpu::BindGroupLayout,
-    wgpu::BindGroup,
-) {
+fn init_camera(device: &wgpu::Device, width: u32, height: u32) -> (CameraUniform, wgpu::Buffer) {
     let camera_uniform = CameraUniform::new(width, height);
     let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Camera Buffer"),
         contents: bytemuck::cast_slice(&[camera_uniform]),
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
     });
-    let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("Camera Bind Group Layout"),
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::VERTEX,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        }],
-    });
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("Camera Bind Group"),
-        layout: &layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: buffer.as_entire_binding(),
-        }],
-    });
-    (camera_uniform, buffer, layout, bind_group)
+    (camera_uniform, buffer)
 }
 
-struct StarBuffers {
-    buffer: wgpu::Buffer,
-    render_layout: wgpu::BindGroupLayout,
-    render_bind_group: wgpu::BindGroup,
-    compute_layout: wgpu::BindGroupLayout,
-    compute_bind_group: wgpu::BindGroup,
-}
-
-fn init_star_buffers(device: &wgpu::Device, queue: &wgpu::Queue, stars: &[Star]) -> StarBuffers {
+fn init_star_buffer(device: &wgpu::Device, queue: &wgpu::Queue, stars: &[Star]) -> wgpu::Buffer {
     let buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Star Buffer"),
         size: (stars.len() * mem::size_of::<Star>()) as u64,
@@ -345,76 +346,33 @@ fn init_star_buffers(device: &wgpu::Device, queue: &wgpu::Queue, stars: &[Star])
 
     queue.write_buffer(&buffer, 0, bytemuck::cast_slice(stars));
 
-    let render_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("Star Render Bind Group Layout"),
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::VERTEX,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Storage { read_only: true },
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        }],
-    });
-
-    let render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("Star Render Bind Group"),
-        layout: &render_layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: buffer.as_entire_binding(),
-        }],
-    });
-
-    let compute_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("Star Compute Bind Group Layout"),
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::COMPUTE,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Storage { read_only: false },
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        }],
-    });
-
-    let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("Star Compute Bind Group"),
-        layout: &compute_layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: buffer.as_entire_binding(),
-        }],
-    });
-
-    StarBuffers {
-        buffer,
-        render_layout,
-        render_bind_group,
-        compute_layout,
-        compute_bind_group,
-    }
+    buffer
 }
 
-fn init_pipeline(
+/// Bind group with a single buffer at binding 0. `layout` comes from a pipeline's
+/// auto-derived layout (`pipeline.get_bind_group_layout(i)`), so access mode and
+/// visibility always match what the shader declares.
+fn buffer_bind_group(
     device: &wgpu::Device,
-    format: wgpu::TextureFormat,
-    camera_layout: &wgpu::BindGroupLayout,
-    storage_layout: &wgpu::BindGroupLayout,
-) -> wgpu::RenderPipeline {
+    label: &str,
+    layout: &wgpu::BindGroupLayout,
+    buffer: &wgpu::Buffer,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some(label),
+        layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: buffer.as_entire_binding(),
+        }],
+    })
+}
+
+fn init_pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu::RenderPipeline {
     let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
-    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("Render Pipeline Layout"),
-        bind_group_layouts: &[Some(camera_layout), Some(storage_layout)],
-        immediate_size: 0,
-    });
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Render Pipeline"),
-        layout: Some(&pipeline_layout),
+        layout: None,
         vertex: wgpu::VertexState {
             module: &shader,
             entry_point: Some("vs_main"),
@@ -462,21 +420,12 @@ fn init_pipeline(
     })
 }
 
-fn init_compute_pipeline(
-    device: &wgpu::Device,
-    star_layout: &wgpu::BindGroupLayout,
-) -> wgpu::ComputePipeline {
+fn init_compute_pipeline(device: &wgpu::Device) -> wgpu::ComputePipeline {
     let shader = device.create_shader_module(wgpu::include_wgsl!("compute.wgsl"));
-
-    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("Compute Pipeline Layout"),
-        bind_group_layouts: &[Some(star_layout)],
-        immediate_size: 0,
-    });
 
     device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: Some("Introduction Compute Pipeline"),
-        layout: Some(&pipeline_layout),
+        layout: None,
         module: &shader,
         entry_point: None,
         compilation_options: Default::default(),
