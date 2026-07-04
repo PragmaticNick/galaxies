@@ -1,3 +1,7 @@
+use bytemuck::{Pod, Zeroable};
+
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
 pub struct Star {
     pub pos: [f32; 2],
     pub vel: [f32; 2],

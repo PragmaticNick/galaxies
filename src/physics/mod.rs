@@ -3,7 +3,6 @@ mod fmm;
 
 use crate::star::Star;
 
-/// Gravitational constant (tuned for the sim, not physical).
 pub const G: f32 = 100.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -25,8 +24,6 @@ impl PhysicsStrategy {
     }
 }
 
-/// Advance the sim one step: compute accelerations via `strategy`, then integrate.
-/// Body 0 (galactic core) is held fixed.
 pub fn update_physics(stars: &mut [Star], dt: f32, strategy: PhysicsStrategy) {
     let accels = match strategy {
         PhysicsStrategy::PlainLoop => direct::accels_plain(stars),
@@ -43,7 +40,6 @@ pub fn update_physics(stars: &mut [Star], dt: f32, strategy: PhysicsStrategy) {
     }
 }
 
-/// Softened pairwise gravity: force on `target` due to `source`.
 pub(crate) fn gravity(target: &Star, source: &Star) -> [f32; 2] {
     const SOFTENING2: f32 = 400.0;
     let dx = source.pos[0] - target.pos[0];

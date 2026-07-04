@@ -49,7 +49,6 @@ impl Multipole {
         }
     }
 
-    /// Force on a target of mass `mt` at `target_pos` from this expansion.
     pub fn eval(&self, target_pos: [f32; 2], mt: f32) -> [f32; 2] {
         let a = target_pos[0] - self.center[0];
         let b = target_pos[1] - self.center[1];

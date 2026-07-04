@@ -9,8 +9,8 @@ use winit::{
     window::Window,
 };
 
-use crate::galaxy::{generate_galaxy, GalaxyConfig};
-use crate::physics::{update_physics, PhysicsStrategy};
+use crate::galaxy::{GalaxyConfig, generate_galaxy};
+use crate::physics::{PhysicsStrategy, update_physics};
 use crate::renderer::Renderer;
 use crate::star::Star;
 
@@ -69,7 +69,7 @@ impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window_attributes = Window::default_attributes();
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
-        self.renderer = Some(pollster::block_on(Renderer::new(window)).unwrap());
+        self.renderer = Some(pollster::block_on(Renderer::new(window, &self.stars)).unwrap());
     }
 
     fn window_event(
@@ -95,7 +95,7 @@ impl ApplicationHandler for App {
                 self.last_frame = Some(now);
                 self.time += dt;
                 update_physics(&mut self.stars, dt, self.strategy);
-                match renderer.render(&self.stars, self.strategy.name()) {
+                match renderer.render(self.stars.len(), self.strategy.name()) {
                     Ok(_) => {}
                     Err(e) => {
                         log::error!("{e}");

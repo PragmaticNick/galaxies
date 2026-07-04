@@ -10,12 +10,10 @@ use winit::window::Window;
 
 use crate::renderer::camera::CameraUniform;
 use crate::renderer::fps::FpsCounter;
-use crate::renderer::geometry::Vertex;
 use crate::star::Star;
 
 mod camera;
 mod fps;
-mod geometry;
 
 pub struct Renderer {
     surface: wgpu::Surface<'static>,
@@ -26,8 +24,10 @@ pub struct Renderer {
     window: Arc<Window>,
 
     render_pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
-    vertex_buffer_capacity: usize,
+    compute_pipeline: wgpu::ComputePipeline,
+
+    bind_group: wgpu::BindGroup,
+    storage_buffer: wgpu::Buffer,
 
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
@@ -45,14 +45,33 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
+    pub async fn new(window: Arc<Window>, stars: &[Star]) -> anyhow::Result<Self> {
         let (surface, device, queue, config) = init_wgpu(window.clone()).await?;
         let (camera_uniform, camera_buffer, camera_layout, camera_bind_group) =
             init_camera(&device, config.width, config.height);
+        let compute_pipeline = init_compute_pipeline(&device);
         let render_pipeline = init_pipeline(&device, config.format, &camera_layout);
-        let (vertex_buffer, vertex_buffer_capacity) = init_vertex_buffer(&device);
+
         let (font_system, swash_cache, text_viewport, text_atlas, text_renderer, fps_buffer) =
             init_text(&device, &queue, config.format);
+
+        let storage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Star Buffer"),
+            size: (stars.len() * mem::size_of::<Star>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        queue.write_buffer(&storage_buffer, 0, bytemuck::cast_slice(stars));
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &compute_pipeline.get_bind_group_layout(0),
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: storage_buffer.as_entire_binding(),
+            }],
+        });
 
         Ok(Self {
             window,
@@ -61,9 +80,10 @@ impl Renderer {
             queue,
             config,
             is_surface_configured: false,
+            compute_pipeline,
+            bind_group,
             render_pipeline,
-            vertex_buffer,
-            vertex_buffer_capacity,
+            storage_buffer,
             camera_uniform,
             camera_buffer,
             camera_bind_group,
@@ -94,28 +114,49 @@ impl Renderer {
         }
     }
 
-    pub fn render(&mut self, stars: &[Star], strategy: &str) -> anyhow::Result<()> {
+    pub fn render(&mut self, star_count: usize, strategy: &str) -> anyhow::Result<()> {
         self.window.request_redraw();
 
         if !self.is_surface_configured {
             return Ok(());
         }
 
-        self.tick_fps(stars.len(), strategy);
+        self.tick_fps(star_count, strategy);
         self.prepare_text();
-        let num_vertices = self.upload_vertices(stars);
 
         let output = match self.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
+            wgpu::CurrentSurfaceTexture::Success(t)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
             _ => return Ok(()),
         };
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Render Encoder"),
-        });
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        // let mut compute_encoder =
+        //     self.device
+        //         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        //             label: Some("compute_encoder Encoder"),
+        //         });
 
+        // let workgroup_count = star_count.div_ceil(64) as u32;
+        // {
+        //     let mut pass = compute_encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        //         label: Some("Compute Pass"),
+        //         timestamp_writes: None,
+        //     });
+
+        //     pass.set_pipeline(&self.compute_pipeline);
+        //     pass.set_bind_group(0, &self.bind_group, &[]);
+        //     pass.dispatch_workgroups(workgroup_count, 1, 1);
+        // }
+
+        let mut render_encoder =
+            self.device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("compute_encoder Encoder"),
+                });
         {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut pass = render_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
@@ -134,15 +175,15 @@ impl Renderer {
 
             pass.set_pipeline(&self.render_pipeline);
             pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            pass.draw(0..num_vertices as u32, 0..1);
+            pass.set_bind_group(1, &self.bind_group, &[]);
+            pass.draw(0..(star_count * 6) as u32, 0..1);
 
             self.text_renderer
                 .render(&self.text_atlas, &self.text_viewport, &mut pass)
                 .unwrap();
         }
 
-        self.queue.submit(std::iter::once(encoder.finish()));
+        self.queue.submit(std::iter::once(render_encoder.finish()));
         output.present();
 
         Ok(())
@@ -171,7 +212,8 @@ impl Renderer {
                 Shaping::Basic,
                 None,
             );
-            self.fps_buffer.shape_until_scroll(&mut self.font_system, false);
+            self.fps_buffer
+                .shape_until_scroll(&mut self.font_system, false);
         }
     }
 
@@ -195,7 +237,12 @@ impl Renderer {
                     left: 10.0,
                     top: 10.0,
                     scale: 1.0,
-                    bounds: TextBounds { left: 0, top: 0, right: 600, bottom: 144 },
+                    bounds: TextBounds {
+                        left: 0,
+                        top: 0,
+                        right: 600,
+                        bottom: 144,
+                    },
                     default_color: Color::rgb(255, 255, 255),
                     custom_glyphs: &[],
                 }],
@@ -203,26 +250,7 @@ impl Renderer {
             )
             .unwrap();
     }
-
-    fn upload_vertices(&mut self, stars: &[Star]) -> usize {
-        let vertices = stars_to_vertices(stars);
-        if vertices.len() > self.vertex_buffer_capacity {
-            let new_capacity = vertices.len().next_power_of_two();
-            self.vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Vertex Buffer"),
-                size: (new_capacity * mem::size_of::<Vertex>()) as u64,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-            self.vertex_buffer_capacity = new_capacity;
-        }
-        if !vertices.is_empty() {
-            self.queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
-        }
-        vertices.len()
-    }
 }
-
 
 async fn init_wgpu(
     window: Arc<Window>,
@@ -335,7 +363,7 @@ fn init_pipeline(
         vertex: wgpu::VertexState {
             module: &shader,
             entry_point: Some("vs_main"),
-            buffers: &[Vertex::desc()],
+            buffers: &[],
             compilation_options: wgpu::PipelineCompilationOptions::default(),
         },
         fragment: Some(wgpu::FragmentState {
@@ -379,22 +407,31 @@ fn init_pipeline(
     })
 }
 
-fn init_vertex_buffer(device: &wgpu::Device) -> (wgpu::Buffer, usize) {
-    let capacity = 16 * 6;
-    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Vertex Buffer"),
-        size: (capacity * mem::size_of::<Vertex>()) as u64,
-        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    (buffer, capacity)
+fn init_compute_pipeline(device: &wgpu::Device) -> wgpu::ComputePipeline {
+    let shader = device.create_shader_module(wgpu::include_wgsl!("compute.wgsl"));
+
+    device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("Introduction Compute Pipeline"),
+        layout: None,
+        module: &shader,
+        entry_point: None,
+        compilation_options: Default::default(),
+        cache: Default::default(),
+    })
 }
 
 fn init_text(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     format: wgpu::TextureFormat,
-) -> (FontSystem, SwashCache, Viewport, TextAtlas, TextRenderer, Buffer) {
+) -> (
+    FontSystem,
+    SwashCache,
+    Viewport,
+    TextAtlas,
+    TextRenderer,
+    Buffer,
+) {
     let mut font_system = FontSystem::new();
     let swash_cache = SwashCache::new();
     let cache = Cache::new(device);
@@ -411,25 +448,14 @@ fn init_text(
         None,
     );
     fps_buffer.shape_until_scroll(&mut font_system, false);
-    (font_system, swash_cache, viewport, atlas, renderer, fps_buffer)
+    (
+        font_system,
+        swash_cache,
+        viewport,
+        atlas,
+        renderer,
+        fps_buffer,
+    )
 }
-
 
 const GLOW_FACTOR: f32 = 3.5;
-
-fn stars_to_vertices(stars: &[Star]) -> Vec<Vertex> {
-    stars
-        .iter()
-        .flat_map(|s| {
-            let [cx, cy] = s.pos;
-            let g = s.radius * GLOW_FACTOR;
-            let c = s.color;
-            let f = GLOW_FACTOR;
-            let tl = ([cx - g, cy + g, 0.0], [-f,  f]);
-            let tr = ([cx + g, cy + g, 0.0], [ f,  f]);
-            let bl = ([cx - g, cy - g, 0.0], [-f, -f]);
-            let br = ([cx + g, cy - g, 0.0], [ f, -f]);
-            [tl, bl, tr, tr, bl, br].map(|(position, local)| Vertex { position, color: c, local })
-        })
-        .collect()
-}

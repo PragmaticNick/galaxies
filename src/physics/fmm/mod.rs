@@ -5,11 +5,10 @@ use rayon::prelude::*;
 
 use super::gravity;
 use crate::star::Star;
-use tree::{admissible, Tree};
+use tree::{Tree, admissible};
 
 pub const THETA: f32 = 0.5;
 
-/// Single-threaded: walk each target leaf in sequence.
 pub fn accels_serial(stars: &[Star]) -> Vec<[f32; 2]> {
     if stars.is_empty() {
         return Vec::new();
@@ -22,8 +21,6 @@ pub fn accels_serial(stars: &[Star]) -> Vec<[f32; 2]> {
     finalize(contributions, stars)
 }
 
-/// Parallel: each target leaf owns a disjoint particle range, so leaves are
-/// processed across cores without contention.
 pub fn accels_rayon(stars: &[Star]) -> Vec<[f32; 2]> {
     if stars.is_empty() {
         return Vec::new();
@@ -45,8 +42,6 @@ fn prepare(stars: &[Star]) -> (Tree, Vec<usize>) {
     (tree, leaves)
 }
 
-/// Forces on target leaf `t`'s particles from the whole tree. A leaf's targets
-/// are fixed, so only the source tree is descended.
 fn leaf_forces<'a>(
     tree: &'a Tree,
     t: usize,
@@ -87,8 +82,6 @@ fn assemble_multipoles(tree: &mut Tree, stars: &[Star]) {
     }
 }
 
-/// Accumulate force on each particle of target leaf `t` (its bodies are
-/// `targets`, with `local` aligned to them) from source subtree `source`.
 fn accumulate(
     tree: &Tree,
     source: usize,
@@ -123,8 +116,22 @@ fn accumulate(
         return;
     }
 
-    accumulate(tree, tree.nodes[source].left.unwrap(), t, targets, stars, local);
-    accumulate(tree, tree.nodes[source].right.unwrap(), t, targets, stars, local);
+    accumulate(
+        tree,
+        tree.nodes[source].left.unwrap(),
+        t,
+        targets,
+        stars,
+        local,
+    );
+    accumulate(
+        tree,
+        tree.nodes[source].right.unwrap(),
+        t,
+        targets,
+        stars,
+        local,
+    );
 }
 
 #[cfg(test)]
