@@ -10,7 +10,6 @@ use winit::{
 };
 
 use crate::galaxy::{GalaxyConfig, generate_galaxy};
-use crate::physics::{PhysicsStrategy, update_physics};
 use crate::renderer::Renderer;
 use crate::star::Star;
 
@@ -19,7 +18,6 @@ pub struct App {
     stars: Vec<Star>,
     last_frame: Option<Instant>,
     time: f32,
-    strategy: PhysicsStrategy,
 }
 
 impl App {
@@ -42,25 +40,13 @@ impl App {
             stars: generate_galaxy(&config),
             last_frame: None,
             time: 0.0,
-            strategy: PhysicsStrategy::Rayon,
         }
     }
 
     fn handle_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, is_pressed: bool) {
         match (code, is_pressed) {
             (KeyCode::Escape, true) => event_loop.exit(),
-            (KeyCode::Digit1, true) => self.set_strategy(PhysicsStrategy::PlainLoop),
-            (KeyCode::Digit2, true) => self.set_strategy(PhysicsStrategy::Rayon),
-            (KeyCode::Digit3, true) => self.set_strategy(PhysicsStrategy::FmmSerial),
-            (KeyCode::Digit4, true) => self.set_strategy(PhysicsStrategy::FmmRayon),
             _ => {}
-        }
-    }
-
-    fn set_strategy(&mut self, strategy: PhysicsStrategy) {
-        if self.strategy != strategy {
-            self.strategy = strategy;
-            log::info!("physics strategy: {}", strategy.name());
         }
     }
 }
@@ -101,7 +87,7 @@ impl ApplicationHandler for App {
                 };
                 self.last_frame = Some(now);
                 self.time += dt;
-                match renderer.render(self.stars.len(), self.strategy.name()) {
+                match renderer.render(self.stars.len()) {
                     Ok(_) => {}
                     Err(e) => {
                         log::error!("{e}");

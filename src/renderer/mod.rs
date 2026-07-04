@@ -26,8 +26,9 @@ pub struct Renderer {
     render_pipeline: wgpu::RenderPipeline,
     compute_pipeline: wgpu::ComputePipeline,
 
-    storage_buffer: wgpu::Buffer,
-    storage_bind_group: wgpu::BindGroup,
+    star_buffer: wgpu::Buffer,
+    star_render_bind_group: wgpu::BindGroup,
+    star_compute_bind_group: wgpu::BindGroup,
 
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
@@ -52,11 +53,10 @@ impl Renderer {
 
         let compute_pipeline = init_compute_pipeline(&device);
 
-        let (storage_buffer, storage_layout, storage_bind_group) =
-            init_storage_buffer(&device, &queue, stars);
+        let stars_gpu = init_star_buffers(&device, &queue, stars);
 
         let render_pipeline =
-            init_pipeline(&device, config.format, &camera_layout, &storage_layout);
+            init_pipeline(&device, config.format, &camera_layout, &stars_gpu.render_layout);
 
         let (font_system, swash_cache, text_viewport, text_atlas, text_renderer, fps_buffer) =
             init_text(&device, &queue, config.format);
@@ -69,9 +69,10 @@ impl Renderer {
             config,
             is_surface_configured: false,
             compute_pipeline,
-            storage_bind_group,
             render_pipeline,
-            storage_buffer,
+            star_buffer: stars_gpu.buffer,
+            star_render_bind_group: stars_gpu.render_bind_group,
+            star_compute_bind_group: stars_gpu.compute_bind_group,
             camera_uniform,
             camera_buffer,
             camera_bind_group,
@@ -106,12 +107,12 @@ impl Renderer {
         self.window.request_redraw();
     }
 
-    pub fn render(&mut self, star_count: usize, strategy: &str) -> anyhow::Result<()> {
+    pub fn render(&mut self, star_count: usize) -> anyhow::Result<()> {
         if !self.is_surface_configured {
             return Ok(());
         }
 
-        self.tick_fps(star_count, strategy);
+        self.tick_fps(star_count);
         self.prepare_text();
 
         let output = match self.surface.get_current_texture() {
@@ -165,7 +166,7 @@ impl Renderer {
 
             pass.set_pipeline(&self.render_pipeline);
             pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            pass.set_bind_group(1, &self.storage_bind_group, &[]);
+            pass.set_bind_group(1, &self.star_render_bind_group, &[]);
             pass.draw(0..(star_count * 6) as u32, 0..1);
 
             self.text_renderer
@@ -178,7 +179,7 @@ impl Renderer {
         Ok(())
     }
 
-    fn tick_fps(&mut self, star_count: usize, strategy: &str) {
+    fn tick_fps(&mut self, star_count: usize) {
         let fps_changed = match self.fps_counter.tick() {
             Some(fps) => {
                 self.last_fps = fps;
@@ -186,13 +187,11 @@ impl Renderer {
             }
             None => false,
         };
-        let strategy_changed = self.hud_strategy != strategy;
 
-        if fps_changed || strategy_changed {
-            self.hud_strategy = strategy.to_string();
+        if fps_changed {
             let text = format!(
-                "FPS: {:.0}\nStars: {}\nStrategy: {}",
-                self.last_fps, star_count, strategy
+                "FPS: {:.0}\nStars: {}\nStrategy: gpu",
+                self.last_fps, star_count
             );
             self.fps_buffer.set_text(
                 &mut self.font_system,
@@ -335,11 +334,21 @@ fn init_camera(
     (camera_uniform, buffer, layout, bind_group)
 }
 
-fn init_storage_buffer(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    stars: &[Star],
-) -> (wgpu::Buffer, wgpu::BindGroupLayout, wgpu::BindGroup) {
+/// The single star storage buffer plus the two ways it gets bound:
+/// - `render_*`  → read-only, VERTEX stage: the vertex shader reads star positions to draw.
+/// - `compute_*` → read-write, COMPUTE stage: the physics kernel updates star positions.
+///
+/// One buffer, two bind groups. wgpu inserts a write→read barrier between the
+/// compute pass and the render pass so the draw sees the updated positions.
+struct StarBuffers {
+    buffer: wgpu::Buffer,
+    render_layout: wgpu::BindGroupLayout,
+    render_bind_group: wgpu::BindGroup,
+    compute_layout: wgpu::BindGroupLayout,
+    compute_bind_group: wgpu::BindGroup,
+}
+
+fn init_star_buffers(device: &wgpu::Device, queue: &wgpu::Queue, stars: &[Star]) -> StarBuffers {
     let buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Star Buffer"),
         size: (stars.len() * mem::size_of::<Star>()) as u64,
@@ -349,8 +358,8 @@ fn init_storage_buffer(
 
     queue.write_buffer(&buffer, 0, bytemuck::cast_slice(stars));
 
-    let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("Star Storage Bind Group Layout"),
+    let render_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("Star Render Bind Group Layout"),
         entries: &[wgpu::BindGroupLayoutEntry {
             binding: 0,
             visibility: wgpu::ShaderStages::VERTEX,
@@ -363,16 +372,45 @@ fn init_storage_buffer(
         }],
     });
 
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("Star Storage Bind Group"),
-        layout: &layout,
+    let render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Star Render Bind Group"),
+        layout: &render_layout,
         entries: &[wgpu::BindGroupEntry {
             binding: 0,
             resource: buffer.as_entire_binding(),
         }],
     });
 
-    (buffer, layout, bind_group)
+    let compute_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("Star Compute Bind Group Layout"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::COMPUTE,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only: false },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        }],
+    });
+
+    let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Star Compute Bind Group"),
+        layout: &compute_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: buffer.as_entire_binding(),
+        }],
+    });
+
+    StarBuffers {
+        buffer,
+        render_layout,
+        render_bind_group,
+        compute_layout,
+        compute_bind_group,
+    }
 }
 
 fn init_pipeline(
