@@ -22,7 +22,6 @@ struct VertexOutput {
     @location(1) local: vec2<f32>,
 };
 
-
 const GLOW_FACTOR: f32 = 3.5;
 
 const QUAD: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
@@ -46,7 +45,7 @@ fn vs_main(@builtin(vertex_index) i: u32) -> VertexOutput {
     let world_pos = s.pos + local * s.radius * GLOW_FACTOR;
 
     var out: VertexOutput;
-    out.clip_position = camera.proj * vec4<f32>(world_pos, 1.0);
+    out.clip_position = camera.proj * vec4<f32>(world_pos, 0.0, 1.0);
     out.local = local * GLOW_FACTOR;
     out.color = s.color;
 

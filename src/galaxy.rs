@@ -28,6 +28,7 @@ pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Star> {
         mass: config.core_mass,
         radius: config.star_radius * 3.0,
         color: [1.0, 1.0, 1.0],
+        ..bytemuck::Zeroable::zeroed()
     }];
 
     for _ in 0..config.star_count {
@@ -51,6 +52,7 @@ pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Star> {
             mass: config.star_mass,
             radius: config.star_radius,
             color: [cr * 0.25, cg * 0.25, cb * 0.25],
+            ..bytemuck::Zeroable::zeroed()
         });
     }
 

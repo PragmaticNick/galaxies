@@ -27,7 +27,7 @@ impl App {
         let config = GalaxyConfig {
             center: [0.0, 0.0],
             radius: 600.0,
-            star_count: 4000,
+            star_count: 1000,
             core_mass: 50000.0,
             arm_count: 4,
             arm_rotation_factor: 4.0,
@@ -67,9 +67,16 @@ impl App {
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
         let window_attributes = Window::default_attributes();
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
         self.renderer = Some(pollster::block_on(Renderer::new(window, &self.stars)).unwrap());
+    }
+
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        if let Some(r) = &self.renderer {
+            r.request_redraw();
+        }
     }
 
     fn window_event(
@@ -94,7 +101,6 @@ impl ApplicationHandler for App {
                 };
                 self.last_frame = Some(now);
                 self.time += dt;
-                update_physics(&mut self.stars, dt, self.strategy);
                 match renderer.render(self.stars.len(), self.strategy.name()) {
                     Ok(_) => {}
                     Err(e) => {
