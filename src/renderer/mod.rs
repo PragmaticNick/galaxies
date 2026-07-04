@@ -42,7 +42,6 @@ pub struct Renderer {
     fps_buffer: Buffer,
     fps_counter: FpsCounter,
     last_fps: f32,
-    hud_strategy: String,
 }
 
 impl Renderer {
@@ -51,9 +50,9 @@ impl Renderer {
         let (camera_uniform, camera_buffer, camera_layout, camera_bind_group) =
             init_camera(&device, config.width, config.height);
 
-        let compute_pipeline = init_compute_pipeline(&device);
-
         let stars_gpu = init_star_buffers(&device, &queue, stars);
+
+        let compute_pipeline = init_compute_pipeline(&device, &stars_gpu.compute_layout);
 
         let render_pipeline =
             init_pipeline(&device, config.format, &camera_layout, &stars_gpu.render_layout);
@@ -84,7 +83,6 @@ impl Renderer {
             fps_buffer,
             fps_counter: FpsCounter::new(),
             last_fps: 0.0,
-            hud_strategy: String::new(),
         })
     }
 
@@ -123,31 +121,26 @@ impl Renderer {
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        // let mut compute_encoder =
-        //     self.device
-        //         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        //             label: Some("compute_encoder Encoder"),
-        //         });
-
-        // let workgroup_count = star_count.div_ceil(64) as u32;
-        // {
-        //     let mut pass = compute_encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-        //         label: Some("Compute Pass"),
-        //         timestamp_writes: None,
-        //     });
-
-        //     pass.set_pipeline(&self.compute_pipeline);
-        //     pass.set_bind_group(0, &self.bind_group, &[]);
-        //     pass.dispatch_workgroups(workgroup_count, 1, 1);
-        // }
-
-        let mut render_encoder =
+        let mut encoder =
             self.device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("compute_encoder Encoder"),
+                    label: Some("Frame Encoder"),
                 });
+
         {
-            let mut pass = render_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let workgroup_count = star_count.div_ceil(64) as u32;
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Compute Pass"),
+                timestamp_writes: None,
+            });
+
+            pass.set_pipeline(&self.compute_pipeline);
+            pass.set_bind_group(0, &self.star_compute_bind_group, &[]);
+            pass.dispatch_workgroups(workgroup_count, 1, 1);
+        }
+
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
@@ -173,7 +166,7 @@ impl Renderer {
                 .render(&self.text_atlas, &self.text_viewport, &mut pass)
                 .unwrap();
         }
-        self.queue.submit(std::iter::once(render_encoder.finish()));
+        self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
         Ok(())
@@ -334,12 +327,6 @@ fn init_camera(
     (camera_uniform, buffer, layout, bind_group)
 }
 
-/// The single star storage buffer plus the two ways it gets bound:
-/// - `render_*`  → read-only, VERTEX stage: the vertex shader reads star positions to draw.
-/// - `compute_*` → read-write, COMPUTE stage: the physics kernel updates star positions.
-///
-/// One buffer, two bind groups. wgpu inserts a write→read barrier between the
-/// compute pass and the render pass so the draw sees the updated positions.
 struct StarBuffers {
     buffer: wgpu::Buffer,
     render_layout: wgpu::BindGroupLayout,
@@ -475,12 +462,21 @@ fn init_pipeline(
     })
 }
 
-fn init_compute_pipeline(device: &wgpu::Device) -> wgpu::ComputePipeline {
+fn init_compute_pipeline(
+    device: &wgpu::Device,
+    star_layout: &wgpu::BindGroupLayout,
+) -> wgpu::ComputePipeline {
     let shader = device.create_shader_module(wgpu::include_wgsl!("compute.wgsl"));
+
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("Compute Pipeline Layout"),
+        bind_group_layouts: &[Some(star_layout)],
+        immediate_size: 0,
+    });
 
     device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: Some("Introduction Compute Pipeline"),
-        layout: None,
+        layout: Some(&pipeline_layout),
         module: &shader,
         entry_point: None,
         compilation_options: Default::default(),
