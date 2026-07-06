@@ -24,7 +24,9 @@ pub struct Renderer {
     window: Arc<Window>,
 
     render_pipeline: wgpu::RenderPipeline,
-    compute_pipeline: wgpu::ComputePipeline,
+    drift_pipeline: wgpu::ComputePipeline,
+    kick_pipeline: wgpu::ComputePipeline,
+    commit_pipeline: wgpu::ComputePipeline,
 
     star_render_bind_group: wgpu::BindGroup,
     star_compute_bind_group: wgpu::BindGroup,
@@ -58,7 +60,8 @@ impl Renderer {
         });
 
         let render_pipeline = init_pipeline(&device, config.format);
-        let compute_pipeline = init_compute_pipeline(&device);
+        let (compute_bind_group_layout, drift_pipeline, kick_pipeline, commit_pipeline) =
+            init_compute_pipelines(&device);
 
         let camera_bind_group = buffer_bind_group(
             &device,
@@ -74,7 +77,7 @@ impl Renderer {
         );
         let star_compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Star Compute Bind Group"),
-            layout: &compute_pipeline.get_bind_group_layout(0),
+            layout: &compute_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -97,7 +100,9 @@ impl Renderer {
             queue,
             config,
             is_surface_configured: false,
-            compute_pipeline,
+            drift_pipeline,
+            kick_pipeline,
+            commit_pipeline,
             render_pipeline,
             star_render_bind_group,
             star_compute_bind_group,
@@ -164,14 +169,21 @@ impl Renderer {
                 });
 
         {
-            let workgroup_count = star_count.div_ceil(64) as u32;
+            let workgroup_count = star_count.div_ceil(256) as u32;
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("Compute Pass"),
                 timestamp_writes: None,
             });
 
-            pass.set_pipeline(&self.compute_pipeline);
             pass.set_bind_group(0, &self.star_compute_bind_group, &[]);
+
+            pass.set_pipeline(&self.drift_pipeline);
+            pass.dispatch_workgroups(workgroup_count, 1, 1);
+
+            pass.set_pipeline(&self.kick_pipeline);
+            pass.dispatch_workgroups(workgroup_count, 1, 1);
+
+            pass.set_pipeline(&self.commit_pipeline);
             pass.dispatch_workgroups(workgroup_count, 1, 1);
         }
 
@@ -405,17 +417,69 @@ fn init_pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu::Re
     })
 }
 
-fn init_compute_pipeline(device: &wgpu::Device) -> wgpu::ComputePipeline {
+fn init_compute_pipelines(
+    device: &wgpu::Device,
+) -> (
+    wgpu::BindGroupLayout,
+    wgpu::ComputePipeline,
+    wgpu::ComputePipeline,
+    wgpu::ComputePipeline,
+) {
     let shader = device.create_shader_module(wgpu::include_wgsl!("compute.wgsl"));
 
-    device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: Some("Compute Pipeline"),
-        layout: None,
-        module: &shader,
-        entry_point: None,
-        compilation_options: Default::default(),
-        cache: Default::default(),
-    })
+    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("Compute Bind Group Layout"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+        ],
+    });
+
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("Compute Pipeline Layout"),
+        bind_group_layouts: &[Some(&bind_group_layout)],
+        immediate_size: 0,
+    });
+
+    let make = |entry: &str| {
+        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some(entry),
+            layout: Some(&pipeline_layout),
+            module: &shader,
+            entry_point: Some(entry),
+            compilation_options: Default::default(),
+            cache: Default::default(),
+        })
+    };
+
+    let drift_pipeline = make("drift_half");
+    let kick_pipeline = make("kick");
+    let commit_pipeline = make("commit");
+
+    (
+        bind_group_layout,
+        drift_pipeline,
+        kick_pipeline,
+        commit_pipeline,
+    )
 }
 
 fn init_text(
