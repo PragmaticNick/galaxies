@@ -26,7 +26,6 @@ pub struct Renderer {
     render_pipeline: wgpu::RenderPipeline,
     compute_pipeline: wgpu::ComputePipeline,
 
-    star_buffer: wgpu::Buffer,
     star_render_bind_group: wgpu::BindGroup,
     star_compute_bind_group: wgpu::BindGroup,
     sim_buffer: wgpu::Buffer,
@@ -51,8 +50,6 @@ impl Renderer {
         let (camera_uniform, camera_buffer) = init_camera(&device, config.width, config.height);
         let star_buffer = init_star_buffer(&device, &queue, stars);
 
-        // Simulation params for the compute kernel. 16 bytes: dt as f32 + padding
-        // (uniform buffers round up to a 16-byte stride).
         let sim_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Sim Params Buffer"),
             size: 16,
@@ -63,8 +60,6 @@ impl Renderer {
         let render_pipeline = init_pipeline(&device, config.format);
         let compute_pipeline = init_compute_pipeline(&device);
 
-        // Bind groups use the pipelines' auto-derived layouts, so access mode and
-        // visibility always match the shaders. Render group 0 = camera, 1 = stars.
         let camera_bind_group = buffer_bind_group(
             &device,
             "Camera Bind Group",
@@ -104,7 +99,6 @@ impl Renderer {
             is_surface_configured: false,
             compute_pipeline,
             render_pipeline,
-            star_buffer,
             star_render_bind_group,
             star_compute_bind_group,
             sim_buffer,
@@ -149,8 +143,11 @@ impl Renderer {
         self.tick_fps(star_count);
         self.prepare_text();
 
-        self.queue
-            .write_buffer(&self.sim_buffer, 0, bytemuck::cast_slice(&[dt, 0.0, 0.0, 0.0]));
+        self.queue.write_buffer(
+            &self.sim_buffer,
+            0,
+            bytemuck::cast_slice(&[dt, 0.0, 0.0, 0.0]),
+        );
 
         let output = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t)
@@ -349,9 +346,6 @@ fn init_star_buffer(device: &wgpu::Device, queue: &wgpu::Queue, stars: &[Star]) 
     buffer
 }
 
-/// Bind group with a single buffer at binding 0. `layout` comes from a pipeline's
-/// auto-derived layout (`pipeline.get_bind_group_layout(i)`), so access mode and
-/// visibility always match what the shader declares.
 fn buffer_bind_group(
     device: &wgpu::Device,
     label: &str,
@@ -401,20 +395,11 @@ fn init_pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu::Re
             compilation_options: wgpu::PipelineCompilationOptions::default(),
         }),
         primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            strip_index_format: None,
-            front_face: wgpu::FrontFace::Ccw,
             cull_mode: Some(wgpu::Face::Back),
-            polygon_mode: wgpu::PolygonMode::Fill,
-            unclipped_depth: false,
-            conservative: false,
+            ..Default::default()
         },
         depth_stencil: None,
-        multisample: wgpu::MultisampleState {
-            count: 1,
-            mask: !0,
-            alpha_to_coverage_enabled: false,
-        },
+        multisample: wgpu::MultisampleState::default(),
         multiview_mask: None,
         cache: None,
     })
@@ -424,7 +409,7 @@ fn init_compute_pipeline(device: &wgpu::Device) -> wgpu::ComputePipeline {
     let shader = device.create_shader_module(wgpu::include_wgsl!("compute.wgsl"));
 
     device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: Some("Introduction Compute Pipeline"),
+        label: Some("Compute Pipeline"),
         layout: None,
         module: &shader,
         entry_point: None,

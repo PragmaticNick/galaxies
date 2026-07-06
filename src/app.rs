@@ -17,7 +17,6 @@ pub struct App {
     renderer: Option<Renderer>,
     stars: Vec<Star>,
     last_frame: Option<Instant>,
-    time: f32,
 }
 
 impl App {
@@ -39,7 +38,6 @@ impl App {
             renderer: None,
             stars: generate_galaxy(&config),
             last_frame: None,
-            time: 0.0,
         }
     }
 
@@ -86,7 +84,6 @@ impl ApplicationHandler for App {
                     None => 0.0,
                 };
                 self.last_frame = Some(now);
-                self.time += dt;
                 match renderer.render(self.stars.len(), dt) {
                     Ok(_) => {}
                     Err(e) => {
