@@ -22,8 +22,6 @@ struct VertexOutput {
     @location(1) local: vec2<f32>,
 };
 
-const GLOW_FACTOR: f32 = 3.5;
-
 const QUAD: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
     vec2<f32>(-1.0,  1.0),
     vec2<f32>(-1.0, -1.0),
@@ -42,30 +40,25 @@ fn vs_main(@builtin(vertex_index) i: u32) -> VertexOutput {
     let s = stars[star_index];
     let local = QUAD[corner];
 
-    let world_pos = s.pos + local * s.radius * GLOW_FACTOR;
+    let world_pos = s.pos + local * s.radius;
 
     var out: VertexOutput;
     out.clip_position = camera.proj * vec4<f32>(world_pos, 0.0, 1.0);
-    out.local = local * GLOW_FACTOR;
+    out.local = local;
     out.color = s.color;
 
     return out;
 }
 
-
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let dist = length(in.local);
 
-    let circle = 1.0 - smoothstep(0.85, 1.0, dist);
+    if (dist > 1.0) {
+        discard;
+    }
 
-    let glow_t = clamp((dist - 1.0) / (GLOW_FACTOR - 1.0), 0.0, 1.0);
-    let glow = pow(1.0 - glow_t, 1.6) * 1.5;
-
-    let alpha = circle + (1.0 - circle) * glow;
-    if alpha < 0.004 { discard; }
-
-    return vec4<f32>(in.color, alpha);
+    return vec4<f32>(in.color, 1.0);
 }
 
 

@@ -6,7 +6,7 @@ use winit::{
     event::{KeyEvent, WindowEvent},
     event_loop::ActiveEventLoop,
     keyboard::{KeyCode, PhysicalKey},
-    window::Window,
+    window::{Fullscreen, Window},
 };
 
 use crate::galaxy::{GalaxyConfig, generate_galaxy};
@@ -23,14 +23,15 @@ impl App {
     pub fn new() -> Self {
         let config = GalaxyConfig {
             center: [0.0, 0.0],
-            radius: 600.0,
-            star_count: 30000,
-            core_mass: 50000.0,
+            radius: 200.0,
+            star_count: 20000,
+            core_radius: 2.0,
+            core_mass: 500000.0,
             arm_count: 4,
             arm_rotation_factor: 4.0,
             arm_max_offset: 0.4,
-            star_mass: 0.1,
-            star_radius: 2.0,
+            star_mass: 10.0,
+            star_radius: 1.0,
             gap: 20.0,
         };
 
@@ -54,6 +55,7 @@ impl ApplicationHandler for App {
         event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
         let window_attributes = Window::default_attributes();
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
+        window.set_fullscreen(Some(Fullscreen::Borderless(None)));
         self.renderer = Some(pollster::block_on(Renderer::new(window, &self.stars)).unwrap());
     }
 
