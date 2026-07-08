@@ -17,6 +17,8 @@ mod fps;
 
 const COMPUTE_PASSES: [&str; 3] = ["drift", "kick", "commit"];
 
+const WORKGROUP_SIZE: usize = 256;
+
 pub struct Renderer {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
@@ -199,7 +201,7 @@ impl Renderer {
                 label: Some("Frame Encoder"),
             });
         {
-            let workgroup_count = star_count.div_ceil(256) as u32;
+            let workgroup_count = star_count.div_ceil(WORKGROUP_SIZE) as u32;
             // One pass per dispatch so a begin/end timestamp can wrap each.
             let dispatches = [
                 &self.drift_pipeline,
