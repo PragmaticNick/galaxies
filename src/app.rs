@@ -6,11 +6,11 @@ use winit::{
     event::{KeyEvent, WindowEvent},
     event_loop::ActiveEventLoop,
     keyboard::{KeyCode, PhysicalKey},
-    window::Window,
+    window::{Fullscreen, Window},
 };
 
-use crate::galaxy::{generate_galaxy, GalaxyConfig};
-use crate::physics::{update_physics, PhysicsStrategy};
+use crate::galaxy::{GalaxyConfig, generate_galaxy};
+use crate::physics::{PhysicsStrategy, update_physics};
 use crate::renderer::Renderer;
 use crate::star::Star;
 
@@ -27,7 +27,7 @@ impl App {
         let config = GalaxyConfig {
             center: [0.0, 0.0],
             radius: 600.0,
-            star_count: 4000,
+            star_count: 30000,
             core_mass: 50000.0,
             arm_count: 4,
             arm_rotation_factor: 4.0,
@@ -69,6 +69,7 @@ impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window_attributes = Window::default_attributes();
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
+        window.set_fullscreen(Some(Fullscreen::Borderless(None)));
         self.renderer = Some(pollster::block_on(Renderer::new(window)).unwrap());
     }
 
