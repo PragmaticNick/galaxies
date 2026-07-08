@@ -1,6 +1,6 @@
 const WORKGROUP_SIZE: u32 = 256;
 const G: f32 = 100.0;
-const EPS: f32 = 20;
+const EPS: f32 = 20.0;
 
 struct Star {
     pos: vec2<f32>,
@@ -19,22 +19,30 @@ struct SimParams {
 @group(0) @binding(1) var<uniform> sim: SimParams;
 
 @compute @workgroup_size(WORKGROUP_SIZE)
-fn drift_half(@builtin(global_invocation_id) gid: vec3<u32>) {
+fn drift_half(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_wg: vec3<u32>,
+) {
     let index = gid.x;
+    let stride = num_wg.x * WORKGROUP_SIZE;
     let total = arrayLength(&stars);
-    let dt = sim.dt * 0.1;
-    for (var i: u32 = index; i < total; i += WORKGROUP_SIZE) {
+    let dt = sim.dt;
+    for (var i: u32 = index; i < total; i += stride) {
         if (i == 0u) { continue; }
         stars[i].pos += 0.5 * stars[i].vel * dt;
     }
 }
 
 @compute @workgroup_size(WORKGROUP_SIZE)
-fn kick(@builtin(global_invocation_id) gid: vec3<u32>) {
+fn kick(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_wg: vec3<u32>,
+) {
     let index = gid.x;
+    let stride = num_wg.x * WORKGROUP_SIZE;
     let total = arrayLength(&stars);
-    let dt = sim.dt * 0.1;
-    for (var i: u32 = index; i < total; i += WORKGROUP_SIZE) {
+    let dt = sim.dt;
+    for (var i: u32 = index; i < total; i += stride) {
         if (i == 0u) { continue; }
         var a: vec2<f32> = vec2(0.0, 0.0);
         var t = stars[i];
@@ -51,10 +59,14 @@ fn kick(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 
 @compute @workgroup_size(WORKGROUP_SIZE)
-fn commit(@builtin(global_invocation_id) gid: vec3<u32>) {
+fn commit(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_wg: vec3<u32>,
+) {
     let index = gid.x;
+    let stride = num_wg.x * WORKGROUP_SIZE;
     let total = arrayLength(&stars);
-    for (var i: u32 = index; i < total; i += WORKGROUP_SIZE) {
+    for (var i: u32 = index; i < total; i += stride) {
         if (i == 0u) { continue; }
         stars[i].pos = stars[i]._pad;
     }

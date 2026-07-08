@@ -24,7 +24,7 @@ impl App {
         let config = GalaxyConfig {
             center: [0.0, 0.0],
             radius: 600.0,
-            star_count: 10000,
+            star_count: 30000,
             core_mass: 50000.0,
             arm_count: 4,
             arm_rotation_factor: 4.0,
