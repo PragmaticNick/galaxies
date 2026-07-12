@@ -116,7 +116,7 @@ impl App {
         self.stars = generate_galaxy(&preset.config, preset.eps, preset.g);
         if let Some(r) = &mut self.renderer {
             r.set_stars(&self.stars);
-            r.set_physics(preset.eps, preset.g);
+            r.set_physics(preset.eps, preset.g, preset.config.radius, preset.config.center);
             r.set_preset_name(preset.name);
         }
     }
@@ -144,6 +144,8 @@ impl ApplicationHandler for App {
                 &self.stars,
                 preset.eps,
                 preset.g,
+                preset.config.radius,
+                preset.config.center,
                 preset.name,
             ))
             .unwrap(),

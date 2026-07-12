@@ -8,6 +8,4 @@ pub struct Star {
     pub mass: f32,
     pub radius: f32,
     pub _pad: [f32; 2],
-    pub color: [f32; 3],
-    pub _pad2: f32,
 }

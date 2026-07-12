@@ -32,10 +32,13 @@ pub struct Renderer {
 
     star_render_bind_group: wgpu::BindGroup,
     star_compute_bind_group: wgpu::BindGroup,
+    sim_render_bind_group: wgpu::BindGroup,
     compute_bind_group_layout: wgpu::BindGroupLayout,
     sim_buffer: wgpu::Buffer,
     eps: f32,
     g: f32,
+    radius: f32,
+    center: [f32; 2],
 
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
@@ -59,6 +62,8 @@ impl Renderer {
         stars: &[Star],
         eps: f32,
         g: f32,
+        radius: f32,
+        center: [f32; 2],
         preset_name: &str,
     ) -> anyhow::Result<Self> {
         let (surface, device, queue, config) = init_wgpu(window.clone()).await?;
@@ -67,7 +72,7 @@ impl Renderer {
 
         let sim_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Sim Params Buffer"),
-            size: 16,
+            size: 32,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -87,6 +92,12 @@ impl Renderer {
             "Star Render Bind Group",
             &render_pipeline.get_bind_group_layout(1),
             &star_buffer,
+        );
+        let sim_render_bind_group = buffer_bind_group(
+            &device,
+            "Sim Render Bind Group",
+            &render_pipeline.get_bind_group_layout(2),
+            &sim_buffer,
         );
         let star_compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Star Compute Bind Group"),
@@ -119,10 +130,13 @@ impl Renderer {
             render_pipeline,
             star_render_bind_group,
             star_compute_bind_group,
+            sim_render_bind_group,
             compute_bind_group_layout,
             sim_buffer,
             eps,
             g,
+            radius,
+            center,
             camera_uniform,
             camera_buffer,
             camera_bind_group,
@@ -182,9 +196,11 @@ impl Renderer {
         });
     }
 
-    pub fn set_physics(&mut self, eps: f32, g: f32) {
+    pub fn set_physics(&mut self, eps: f32, g: f32, radius: f32, center: [f32; 2]) {
         self.eps = eps;
         self.g = g;
+        self.radius = radius;
+        self.center = center;
     }
 
     pub fn set_preset_name(&mut self, name: &str) {
@@ -203,7 +219,16 @@ impl Renderer {
         self.queue.write_buffer(
             &self.sim_buffer,
             0,
-            bytemuck::cast_slice(&[dt, self.eps, self.g, 0.0]),
+            bytemuck::cast_slice(&[
+                dt,
+                self.eps,
+                self.g,
+                self.radius,
+                self.center[0],
+                self.center[1],
+                0.0,
+                0.0,
+            ]),
         );
 
         let output = match self.surface.get_current_texture() {
@@ -258,6 +283,7 @@ impl Renderer {
             pass.set_pipeline(&self.render_pipeline);
             pass.set_bind_group(0, &self.camera_bind_group, &[]);
             pass.set_bind_group(1, &self.star_render_bind_group, &[]);
+            pass.set_bind_group(2, &self.sim_render_bind_group, &[]);
             pass.draw(0..(star_count * 6) as u32, 0..1);
 
             self.text_renderer

@@ -6,7 +6,6 @@ struct Star {
     mass: f32,
     radius: f32,
     _pad: vec2<f32>,
-    color: vec3<f32>,
 };
 
 @group(0) @binding(0) var<storage, read_write> stars: array<Star>;
