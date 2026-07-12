@@ -27,6 +27,8 @@ fn drift_half(
     let total = arrayLength(&stars);
     let dt = sim.dt;
     for (var i: u32 = index; i < total; i += stride) {
+        if i == 0u { continue; }
+
         stars[i].pos += 0.5 * stars[i].vel * dt;
     }
 }
@@ -88,6 +90,7 @@ fn commit(
     let stride = num_wg.x * WORKGROUP_SIZE;
     let total = arrayLength(&stars);
     for (var i: u32 = index; i < total; i += stride) {
+        if i == 0u { continue; }
         stars[i].pos = stars[i]._pad;
     }
 }
