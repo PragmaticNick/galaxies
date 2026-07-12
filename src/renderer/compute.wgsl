@@ -1,6 +1,4 @@
-const WORKGROUP_SIZE: u32 = 256;
-const G: f32 = 100.0;
-const EPS: f32 = 30.0;
+override WORKGROUP_SIZE: u32 = 256u;
 
 struct Star {
     pos: vec2<f32>,
@@ -15,6 +13,8 @@ struct Star {
 
 struct SimParams {
     dt: f32,
+    eps: f32,
+    g: f32,
 };
 @group(0) @binding(1) var<uniform> sim: SimParams;
 
@@ -98,8 +98,8 @@ fn commit(
 
 fn gravity_force(pos_a: vec2<f32>, mass_a: f32, pos_b: vec2<f32>, mass_b: f32) -> vec2<f32> {
     let d = pos_b - pos_a;
-    let dist_sq = dot(d, d) + EPS * EPS;
+    let dist_sq = dot(d, d) + sim.eps * sim.eps;
     let inv_dist = inverseSqrt(dist_sq);
     let inv_dist_cube = inv_dist * inv_dist * inv_dist;
-    return d * (G * mass_a * mass_b * inv_dist_cube);
+    return d * (sim.g * mass_b * inv_dist_cube);
 }

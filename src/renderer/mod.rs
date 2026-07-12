@@ -8,6 +8,7 @@ use glyphon::{
 use wgpu::util::DeviceExt as _;
 use winit::window::Window;
 
+use crate::physics::{EPS, G};
 use crate::renderer::camera::CameraUniform;
 use crate::renderer::fps::FpsCounter;
 use crate::star::Star;
@@ -35,6 +36,8 @@ pub struct Renderer {
     star_render_bind_group: wgpu::BindGroup,
     star_compute_bind_group: wgpu::BindGroup,
     sim_buffer: wgpu::Buffer,
+    eps: f32,
+    g: f32,
 
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
@@ -135,6 +138,8 @@ impl Renderer {
             star_render_bind_group,
             star_compute_bind_group,
             sim_buffer,
+            eps: EPS,
+            g: G,
             camera_uniform,
             camera_buffer,
             camera_bind_group,
@@ -184,7 +189,7 @@ impl Renderer {
         self.queue.write_buffer(
             &self.sim_buffer,
             0,
-            bytemuck::cast_slice(&[dt, 0.0, 0.0, 0.0]),
+            bytemuck::cast_slice(&[dt, self.eps, self.g, 0.0]),
         );
 
         let output = match self.surface.get_current_texture() {
@@ -202,7 +207,6 @@ impl Renderer {
             });
         {
             let workgroup_count = star_count.div_ceil(WORKGROUP_SIZE) as u32;
-            // One pass per dispatch so a begin/end timestamp can wrap each.
             let dispatches = [
                 &self.drift_pipeline,
                 &self.kick_pipeline,
