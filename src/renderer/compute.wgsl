@@ -1,6 +1,6 @@
 const WORKGROUP_SIZE: u32 = 256;
 const G: f32 = 100.0;
-const EPS: f32 = 20.0;
+const EPS: f32 = 30.0;
 
 struct Star {
     pos: vec2<f32>,
@@ -28,7 +28,6 @@ fn drift_half(
     let total = arrayLength(&stars);
     let dt = sim.dt;
     for (var i: u32 = index; i < total; i += stride) {
-        if (i == 0u) { continue; }
         stars[i].pos += 0.5 * stars[i].vel * dt;
     }
 }
@@ -82,21 +81,6 @@ fn kick(
     t._pad = pos + 0.5 * t.vel * dt;
 
     stars[global] = t;
-
-    // for (var i: u32 = index; i < total; i += stride) {
-    //     if (i == 0u) { continue; }
-    //     var a: vec2<f32> = vec2(0.0, 0.0);
-    //     var t = stars[i];
-    //     for (var j: u32 = 0u; j < total; j += 1u) {
-    //         if (j == i) { continue; }
-    //         let s = stars[j];
-    //         let f = gravity_force(t.pos, t.mass, s.pos, s.mass);
-    //         a += f / t.mass;
-    //     }
-    //     t.vel += a * dt;
-    //     t._pad = t.pos + 0.5 * t.vel * dt;
-    //     stars[i] = t;
-    // }
 }
 
 @compute @workgroup_size(WORKGROUP_SIZE)
@@ -108,7 +92,6 @@ fn commit(
     let stride = num_wg.x * WORKGROUP_SIZE;
     let total = arrayLength(&stars);
     for (var i: u32 = index; i < total; i += stride) {
-        if (i == 0u) { continue; }
         stars[i].pos = stars[i]._pad;
     }
 }
