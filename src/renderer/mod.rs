@@ -15,8 +15,6 @@ use crate::star::Star;
 mod camera;
 mod fps;
 
-const COMPUTE_PASSES: [&str; 3] = ["drift", "kick", "commit"];
-
 const WORKGROUP_SIZE: usize = 256;
 
 pub struct Renderer {
@@ -53,12 +51,6 @@ pub struct Renderer {
     last_fps: f32,
     preset_name: String,
     force_text_update: bool,
-
-    timestamps: wgpu::QuerySet,
-    timestamp_resolve: wgpu::Buffer,
-    timestamp_read: wgpu::Buffer,
-    timestamp_period: f32,
-    pass_ms: [f32; 3],
 }
 
 impl Renderer {
@@ -113,24 +105,6 @@ impl Renderer {
 
         let (font_system, swash_cache, text_viewport, text_atlas, text_renderer, fps_buffer) =
             init_text(&device, &queue, config.format);
-        let timestamps = device.create_query_set(&wgpu::QuerySetDescriptor {
-            label: Some("Compute Timestamps"),
-            ty: wgpu::QueryType::Timestamp,
-            count: 6,
-        });
-        let timestamp_resolve = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Timestamp Resolve"),
-            size: 48,
-            usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-        let timestamp_read = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Timestamp Read"),
-            size: 48,
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let timestamp_period = queue.get_timestamp_period();
 
         Ok(Self {
             window,
@@ -162,11 +136,6 @@ impl Renderer {
             last_fps: 0.0,
             preset_name: preset_name.to_string(),
             force_text_update: true,
-            timestamp_period,
-            timestamps,
-            timestamp_resolve,
-            timestamp_read,
-            pass_ms: [0.0; 3],
         })
     }
 
@@ -257,14 +226,10 @@ impl Renderer {
                 &self.kick_pipeline,
                 &self.commit_pipeline,
             ];
-            for (idx, pipeline) in dispatches.into_iter().enumerate() {
+            for pipeline in dispatches {
                 let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: Some("Compute Pass"),
-                    timestamp_writes: Some(wgpu::ComputePassTimestampWrites {
-                        query_set: &self.timestamps,
-                        beginning_of_pass_write_index: Some((idx * 2) as u32),
-                        end_of_pass_write_index: Some((idx * 2 + 1) as u32),
-                    }),
+                    timestamp_writes: None,
                 });
                 pass.set_bind_group(0, &self.star_compute_bind_group, &[]);
                 pass.set_pipeline(pipeline);
@@ -300,25 +265,8 @@ impl Renderer {
                 .unwrap();
         }
 
-        encoder.resolve_query_set(&self.timestamps, 0..6, &self.timestamp_resolve, 0);
-        encoder.copy_buffer_to_buffer(&self.timestamp_resolve, 0, &self.timestamp_read, 0, 48);
-
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
-
-        self.timestamp_read
-            .slice(..)
-            .map_async(wgpu::MapMode::Read, |_| {});
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
-        {
-            let view = self.timestamp_read.slice(..).get_mapped_range();
-            let ticks: &[u64] = bytemuck::cast_slice(&view);
-            for k in 0..3 {
-                let dt = ticks[k * 2 + 1].saturating_sub(ticks[k * 2]);
-                self.pass_ms[k] = dt as f32 * self.timestamp_period / 1_000_000.0;
-            }
-        }
-        self.timestamp_read.unmap();
 
         Ok(())
     }
@@ -334,13 +282,10 @@ impl Renderer {
 
         if fps_changed || self.force_text_update {
             self.force_text_update = false;
-            let mut text = format!(
+            let text = format!(
                 "FPS: {:.0}\nStars: {}\nStrategy: gpu\nPreset: {}",
                 self.last_fps, star_count, self.preset_name
             );
-            for (label, dt) in COMPUTE_PASSES.iter().zip(self.pass_ms) {
-                text.push_str(&format!("\n{label}: {dt:.3} ms"));
-            }
             self.fps_buffer.set_text(
                 &mut self.font_system,
                 &text,
@@ -412,11 +357,10 @@ async fn init_wgpu(
         })
         .await?;
 
-    let required_features = adapter.features() & wgpu::Features::TIMESTAMP_QUERY;
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor {
             label: None,
-            required_features,
+            required_features: wgpu::Features::empty(),
             experimental_features: wgpu::ExperimentalFeatures::disabled(),
             required_limits: wgpu::Limits::default(),
             memory_hints: Default::default(),
@@ -456,7 +400,7 @@ fn init_camera(device: &wgpu::Device, width: u32, height: u32) -> (CameraUniform
 fn init_star_buffer(device: &wgpu::Device, queue: &wgpu::Queue, stars: &[Star]) -> wgpu::Buffer {
     let buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Star Buffer"),
-        size: (stars.len() * mem::size_of::<Star>()) as u64,
+        size: mem::size_of_val(stars) as u64,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
