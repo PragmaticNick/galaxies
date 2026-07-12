@@ -34,7 +34,7 @@ fn drift_half(
 
 var<workgroup> tile_memory: array<vec4<f32>, WORKGROUP_SIZE>;
 
-fn calculate_tile(pos: vec2<f32>, mass: f32) -> vec2<f32> {
+fn calculate_tile(pos: vec2<f32>) -> vec2<f32> {
     var a: vec2<f32> = vec2(0.0, 0.0);
     for (var i: u32 = 0; i < WORKGROUP_SIZE; i += 1) {
         a += gravity_accel(pos, tile_memory[i].xy, tile_memory[i].z);
@@ -70,7 +70,7 @@ fn kick(
 
         workgroupBarrier();
 
-        a += calculate_tile(pos, mass);
+        a += calculate_tile(pos);
         workgroupBarrier();
     }
 

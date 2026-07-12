@@ -2,7 +2,6 @@ use std::f32::consts::PI;
 
 use rand::RngExt;
 
-use crate::physics::{EPS, G};
 use crate::star::Star;
 
 pub struct GalaxyConfig {
@@ -16,7 +15,7 @@ pub struct GalaxyConfig {
     pub gap: f32,
 }
 
-pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Star> {
+pub fn generate_galaxy(config: &GalaxyConfig, eps: f32, g: f32) -> Vec<Star> {
     let mut rng = rand::rng();
 
     let disk_mass_total = config.star_mass * config.star_count as f32;
@@ -39,8 +38,8 @@ pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Star> {
 
         let r_norm = ((r - config.gap) / disk_span).clamp(0.0, 1.0);
         let m_enclosed = config.core_mass + disk_mass_total * r_norm;
-        let softened = (r * r + EPS * EPS).powf(1.5);
-        let v = -(G * m_enclosed * r * r / softened).sqrt();
+        let softened = (r * r + eps * eps).powf(1.5);
+        let v = -(g * m_enclosed * r * r / softened).sqrt();
 
         let t = (r / config.radius).clamp(0.0, 1.0);
 

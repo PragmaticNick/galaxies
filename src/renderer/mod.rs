@@ -8,7 +8,6 @@ use glyphon::{
 use wgpu::util::DeviceExt as _;
 use winit::window::Window;
 
-use crate::physics::{EPS, G};
 use crate::renderer::camera::CameraUniform;
 use crate::renderer::fps::FpsCounter;
 use crate::star::Star;
@@ -35,6 +34,7 @@ pub struct Renderer {
 
     star_render_bind_group: wgpu::BindGroup,
     star_compute_bind_group: wgpu::BindGroup,
+    compute_bind_group_layout: wgpu::BindGroupLayout,
     sim_buffer: wgpu::Buffer,
     eps: f32,
     g: f32,
@@ -51,6 +51,8 @@ pub struct Renderer {
     fps_buffer: Buffer,
     fps_counter: FpsCounter,
     last_fps: f32,
+    preset_name: String,
+    force_text_update: bool,
 
     timestamps: wgpu::QuerySet,
     timestamp_resolve: wgpu::Buffer,
@@ -60,7 +62,13 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub async fn new(window: Arc<Window>, stars: &[Star]) -> anyhow::Result<Self> {
+    pub async fn new(
+        window: Arc<Window>,
+        stars: &[Star],
+        eps: f32,
+        g: f32,
+        preset_name: &str,
+    ) -> anyhow::Result<Self> {
         let (surface, device, queue, config) = init_wgpu(window.clone()).await?;
         let (camera_uniform, camera_buffer) = init_camera(&device, config.width, config.height);
         let star_buffer = init_star_buffer(&device, &queue, stars);
@@ -137,9 +145,10 @@ impl Renderer {
             render_pipeline,
             star_render_bind_group,
             star_compute_bind_group,
+            compute_bind_group_layout,
             sim_buffer,
-            eps: EPS,
-            g: G,
+            eps,
+            g,
             camera_uniform,
             camera_buffer,
             camera_bind_group,
@@ -151,6 +160,8 @@ impl Renderer {
             fps_buffer,
             fps_counter: FpsCounter::new(),
             last_fps: 0.0,
+            preset_name: preset_name.to_string(),
+            force_text_update: true,
             timestamp_period,
             timestamps,
             timestamp_resolve,
@@ -176,6 +187,40 @@ impl Renderer {
 
     pub fn request_redraw(&self) {
         self.window.request_redraw();
+    }
+
+    pub fn set_stars(&mut self, stars: &[Star]) {
+        let star_buffer = init_star_buffer(&self.device, &self.queue, stars);
+        self.star_render_bind_group = buffer_bind_group(
+            &self.device,
+            "Star Render Bind Group",
+            &self.render_pipeline.get_bind_group_layout(1),
+            &star_buffer,
+        );
+        self.star_compute_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Star Compute Bind Group"),
+            layout: &self.compute_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: star_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.sim_buffer.as_entire_binding(),
+                },
+            ],
+        });
+    }
+
+    pub fn set_physics(&mut self, eps: f32, g: f32) {
+        self.eps = eps;
+        self.g = g;
+    }
+
+    pub fn set_preset_name(&mut self, name: &str) {
+        self.preset_name = name.to_string();
+        self.force_text_update = true;
     }
 
     pub fn render(&mut self, star_count: usize, dt: f32) -> anyhow::Result<()> {
@@ -287,10 +332,11 @@ impl Renderer {
             None => false,
         };
 
-        if fps_changed {
+        if fps_changed || self.force_text_update {
+            self.force_text_update = false;
             let mut text = format!(
-                "FPS: {:.0}\nStars: {}\nStrategy: gpu",
-                self.last_fps, star_count
+                "FPS: {:.0}\nStars: {}\nStrategy: gpu\nPreset: {}",
+                self.last_fps, star_count, self.preset_name
             );
             for (label, dt) in COMPUTE_PASSES.iter().zip(self.pass_ms) {
                 text.push_str(&format!("\n{label}: {dt:.3} ms"));
