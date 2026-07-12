@@ -24,11 +24,11 @@ impl App {
         let config = GalaxyConfig {
             center: [0.0, 0.0],
             radius: 200.0,
-            star_count: 20000,
+            star_count: 50000,
             core_radius: 2.0,
             core_mass: 500000.0,
             star_mass: 10.0,
-            star_radius: 1.0,
+            star_radius: 1.5,
             gap: 20.0,
         };
 
