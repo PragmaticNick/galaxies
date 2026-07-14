@@ -5,7 +5,7 @@ use rayon::prelude::*;
 
 use super::gravity;
 use crate::star::Star;
-use tree::{admissible, Tree};
+use tree::{Tree, admissible};
 
 pub const THETA: f32 = 0.5;
 
@@ -123,8 +123,22 @@ fn accumulate(
         return;
     }
 
-    accumulate(tree, tree.nodes[source].left.unwrap(), t, targets, stars, local);
-    accumulate(tree, tree.nodes[source].right.unwrap(), t, targets, stars, local);
+    accumulate(
+        tree,
+        tree.nodes[source].left.unwrap(),
+        t,
+        targets,
+        stars,
+        local,
+    );
+    accumulate(
+        tree,
+        tree.nodes[source].right.unwrap(),
+        t,
+        targets,
+        stars,
+        local,
+    );
 }
 
 #[cfg(test)]
@@ -158,7 +172,7 @@ mod tests {
     #[test]
     fn fmm_matches_direct() {
         let stars = make_stars(1500);
-        let exact = direct::accels_plain(&stars);
+        let exact = direct::direct(&stars);
         let approx = accels_serial(&stars);
 
         let mut max_rel = 0.0f32;

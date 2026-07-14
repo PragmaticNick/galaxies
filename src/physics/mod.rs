@@ -29,8 +29,8 @@ impl PhysicsStrategy {
 /// Body 0 (galactic core) is held fixed.
 pub fn update_physics(stars: &mut [Star], dt: f32, strategy: PhysicsStrategy) {
     let accels = match strategy {
-        PhysicsStrategy::PlainLoop => direct::accels_plain(stars),
-        PhysicsStrategy::Rayon => direct::accels_rayon(stars),
+        PhysicsStrategy::PlainLoop => direct::direct(stars),
+        PhysicsStrategy::Rayon => direct::direct_rayon(stars),
         PhysicsStrategy::FmmSerial => fmm::accels_serial(stars),
         PhysicsStrategy::FmmRayon => fmm::accels_rayon(stars),
     };

@@ -32,13 +32,9 @@ const GLOW_FACTOR: f32 = 3.5;
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let dist = length(in.local);
 
-    let circle = 1.0 - smoothstep(0.85, 1.0, dist);
+    if (dist > 1.0) {
+        discard;
+    }
 
-    let glow_t = clamp((dist - 1.0) / (GLOW_FACTOR - 1.0), 0.0, 1.0);
-    let glow = pow(1.0 - glow_t, 1.6) * 1.5;
-
-    let alpha = circle + (1.0 - circle) * glow;
-    if alpha < 0.004 { discard; }
-
-    return vec4<f32>(in.color, alpha);
+    return vec4<f32>(in.color, 1.0);
 }

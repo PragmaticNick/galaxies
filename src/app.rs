@@ -26,12 +26,9 @@ impl App {
     pub fn new() -> Self {
         let config = GalaxyConfig {
             center: [0.0, 0.0],
-            radius: 600.0,
-            star_count: 30000,
+            radius: 200.0,
+            star_count: 25000,
             core_mass: 50000.0,
-            arm_count: 4,
-            arm_rotation_factor: 4.0,
-            arm_max_offset: 0.4,
             star_mass: 0.1,
             star_radius: 2.0,
             gap: 20.0,

@@ -10,9 +10,6 @@ pub struct GalaxyConfig {
     pub radius: f32,
     pub star_count: u32,
     pub core_mass: f32,
-    pub arm_count: u32,
-    pub arm_rotation_factor: f32,
-    pub arm_max_offset: f32,
     pub star_mass: f32,
     pub star_radius: f32,
     pub gap: f32,
@@ -20,7 +17,6 @@ pub struct GalaxyConfig {
 
 pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Star> {
     let mut rng = rand::rng();
-    let arm_angle = 2.0 * PI / config.arm_count as f32;
 
     let mut stars = vec![Star {
         pos: config.center,
@@ -32,12 +28,7 @@ pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Star> {
 
     for _ in 0..config.star_count {
         let r_unit: f32 = rng.random();
-        let phi_base: f32 = 2.0 * PI * rng.random::<f32>();
-
-        let offset = config.arm_max_offset * (rng.random::<f32>() - 0.5) / r_unit;
-        let phi = (phi_base / arm_angle).floor() * arm_angle
-            + r_unit * config.arm_rotation_factor
-            + offset * offset.abs();
+        let phi: f32 = 2.0 * PI * rng.random::<f32>();
         let r = config.gap + r_unit * (config.radius - config.gap);
 
         let v = -(G * config.core_mass / r.max(1.0)).sqrt();
@@ -46,7 +37,10 @@ pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Star> {
         let [cr, cg, cb] = arm_color(t);
 
         stars.push(Star {
-            pos: [config.center[0] + r * phi.cos(), config.center[1] + r * phi.sin()],
+            pos: [
+                config.center[0] + r * phi.cos(),
+                config.center[1] + r * phi.sin(),
+            ],
             vel: [-phi.sin() * v, phi.cos() * v],
             mass: config.star_mass,
             radius: config.star_radius,
