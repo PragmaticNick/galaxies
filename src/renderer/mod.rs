@@ -106,13 +106,18 @@ impl Renderer {
         let num_vertices = self.upload_vertices(stars);
 
         let output = match self.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
+            wgpu::CurrentSurfaceTexture::Success(t)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
             _ => return Ok(()),
         };
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Render Encoder"),
-        });
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
 
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -160,10 +165,7 @@ impl Renderer {
 
         if fps_changed || strategy_changed {
             self.hud_strategy = strategy.to_string();
-            let text = format!(
-                "FPS: {:.0}\nStars: {}\nStrategy: {}",
-                self.last_fps, star_count, strategy
-            );
+            let text = format!("FPS: {:.0}\nStars: {}", self.last_fps, star_count);
             self.fps_buffer.set_text(
                 &mut self.font_system,
                 &text,
@@ -171,7 +173,8 @@ impl Renderer {
                 Shaping::Basic,
                 None,
             );
-            self.fps_buffer.shape_until_scroll(&mut self.font_system, false);
+            self.fps_buffer
+                .shape_until_scroll(&mut self.font_system, false);
         }
     }
 
@@ -195,7 +198,12 @@ impl Renderer {
                     left: 10.0,
                     top: 10.0,
                     scale: 1.0,
-                    bounds: TextBounds { left: 0, top: 0, right: 600, bottom: 144 },
+                    bounds: TextBounds {
+                        left: 0,
+                        top: 0,
+                        right: 600,
+                        bottom: 144,
+                    },
                     default_color: Color::rgb(255, 255, 255),
                     custom_glyphs: &[],
                 }],
@@ -217,12 +225,12 @@ impl Renderer {
             self.vertex_buffer_capacity = new_capacity;
         }
         if !vertices.is_empty() {
-            self.queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
+            self.queue
+                .write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
         }
         vertices.len()
     }
 }
-
 
 async fn init_wgpu(
     window: Arc<Window>,
@@ -394,7 +402,14 @@ fn init_text(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     format: wgpu::TextureFormat,
-) -> (FontSystem, SwashCache, Viewport, TextAtlas, TextRenderer, Buffer) {
+) -> (
+    FontSystem,
+    SwashCache,
+    Viewport,
+    TextAtlas,
+    TextRenderer,
+    Buffer,
+) {
     let mut font_system = FontSystem::new();
     let swash_cache = SwashCache::new();
     let cache = Cache::new(device);
@@ -411,9 +426,15 @@ fn init_text(
         None,
     );
     fps_buffer.shape_until_scroll(&mut font_system, false);
-    (font_system, swash_cache, viewport, atlas, renderer, fps_buffer)
+    (
+        font_system,
+        swash_cache,
+        viewport,
+        atlas,
+        renderer,
+        fps_buffer,
+    )
 }
-
 
 const GLOW_FACTOR: f32 = 3.5;
 
@@ -425,11 +446,15 @@ fn stars_to_vertices(stars: &[Star]) -> Vec<Vertex> {
             let g = s.radius * GLOW_FACTOR;
             let c = s.color;
             let f = GLOW_FACTOR;
-            let tl = ([cx - g, cy + g, 0.0], [-f,  f]);
-            let tr = ([cx + g, cy + g, 0.0], [ f,  f]);
+            let tl = ([cx - g, cy + g, 0.0], [-f, f]);
+            let tr = ([cx + g, cy + g, 0.0], [f, f]);
             let bl = ([cx - g, cy - g, 0.0], [-f, -f]);
-            let br = ([cx + g, cy - g, 0.0], [ f, -f]);
-            [tl, bl, tr, tr, bl, br].map(|(position, local)| Vertex { position, color: c, local })
+            let br = ([cx + g, cy - g, 0.0], [f, -f]);
+            [tl, bl, tr, tr, bl, br].map(|(position, local)| Vertex {
+                position,
+                color: c,
+                local,
+            })
         })
         .collect()
 }

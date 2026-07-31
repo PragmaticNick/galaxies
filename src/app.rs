@@ -26,11 +26,12 @@ impl App {
     pub fn new() -> Self {
         let config = GalaxyConfig {
             center: [0.0, 0.0],
-            radius: 200.0,
-            star_count: 25000,
+            radius: 300.0,
+            star_count: 60000,
             core_mass: 50000.0,
+            core_radius: 6.0,
             star_mass: 0.1,
-            star_radius: 2.0,
+            star_radius: 1.0,
             gap: 20.0,
         };
 
@@ -92,7 +93,7 @@ impl ApplicationHandler for App {
                 };
                 self.last_frame = Some(now);
                 self.time += dt;
-                update_physics(&mut self.stars, dt, self.strategy);
+                // update_physics(&mut self.stars, dt, self.strategy);
                 match renderer.render(&self.stars, self.strategy.name()) {
                     Ok(_) => {}
                     Err(e) => {
