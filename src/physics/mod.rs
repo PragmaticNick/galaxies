@@ -8,7 +8,7 @@ pub const G: f32 = 100.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PhysicsStrategy {
-    PlainLoop,
+    Direct,
     Rayon,
     FmmSerial,
     FmmRayon,
@@ -17,7 +17,7 @@ pub enum PhysicsStrategy {
 impl PhysicsStrategy {
     pub fn name(&self) -> &'static str {
         match self {
-            PhysicsStrategy::PlainLoop => "plain loop",
+            PhysicsStrategy::Direct => "direct",
             PhysicsStrategy::Rayon => "rayon",
             PhysicsStrategy::FmmSerial => "fmm (serial)",
             PhysicsStrategy::FmmRayon => "fmm (rayon)",
@@ -29,7 +29,7 @@ impl PhysicsStrategy {
 /// Body 0 (galactic core) is held fixed.
 pub fn update_physics(stars: &mut [Star], dt: f32, strategy: PhysicsStrategy) {
     let accels = match strategy {
-        PhysicsStrategy::PlainLoop => direct::direct(stars),
+        PhysicsStrategy::Direct => direct::direct(stars),
         PhysicsStrategy::Rayon => direct::direct_rayon(stars),
         PhysicsStrategy::FmmSerial => fmm::accels_serial(stars),
         PhysicsStrategy::FmmRayon => fmm::accels_rayon(stars),

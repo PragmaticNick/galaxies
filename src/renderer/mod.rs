@@ -13,9 +13,9 @@ use crate::renderer::fps::FpsCounter;
 use crate::renderer::geometry::Vertex;
 use crate::star::Star;
 
-mod camera;
+pub(crate) mod camera;
 mod fps;
-mod geometry;
+pub(crate) mod geometry;
 
 pub struct Renderer {
     surface: wgpu::Surface<'static>,
@@ -165,7 +165,10 @@ impl Renderer {
 
         if fps_changed || strategy_changed {
             self.hud_strategy = strategy.to_string();
-            let text = format!("FPS: {:.0}\nStars: {}", self.last_fps, star_count);
+            let text = format!(
+                "FPS: {:.0}\nStars: {}\nStrategy: {}",
+                self.last_fps, star_count, strategy
+            );
             self.fps_buffer.set_text(
                 &mut self.font_system,
                 &text,
@@ -232,7 +235,7 @@ impl Renderer {
     }
 }
 
-async fn init_wgpu(
+pub(crate) async fn init_wgpu(
     window: Arc<Window>,
 ) -> anyhow::Result<(
     wgpu::Surface<'static>,
@@ -286,7 +289,7 @@ async fn init_wgpu(
     Ok((surface, device, queue, config))
 }
 
-fn init_camera(
+pub(crate) fn init_camera(
     device: &wgpu::Device,
     width: u32,
     height: u32,
@@ -326,7 +329,7 @@ fn init_camera(
     (camera_uniform, buffer, layout, bind_group)
 }
 
-fn init_pipeline(
+pub(crate) fn init_pipeline(
     device: &wgpu::Device,
     format: wgpu::TextureFormat,
     camera_layout: &wgpu::BindGroupLayout,
@@ -398,7 +401,7 @@ fn init_vertex_buffer(device: &wgpu::Device) -> (wgpu::Buffer, usize) {
     (buffer, capacity)
 }
 
-fn init_text(
+pub(crate) fn init_text(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     format: wgpu::TextureFormat,
@@ -438,7 +441,7 @@ fn init_text(
 
 const GLOW_FACTOR: f32 = 3.5;
 
-fn stars_to_vertices(stars: &[Star]) -> Vec<Vertex> {
+pub(crate) fn stars_to_vertices(stars: &[Star]) -> Vec<Vertex> {
     stars
         .iter()
         .flat_map(|s| {

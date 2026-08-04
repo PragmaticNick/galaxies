@@ -22,6 +22,17 @@ const EDGE_RAMP_WIDTH: f32 = 0.15;
 const WOLF_RAYET_FRACTION: f32 = 0.04;
 const WOLF_RAYET_COLOR: [f32; 3] = [0.6, 0.2, 1.0];
 
+const NUM_ARMS: u32 = 2;
+const ARM_TWIST: f32 = 2.5;
+const ARM_SPREAD: f32 = 0.55;
+const ARM_FRACTION: f32 = 0.45;
+
+fn gaussian(rng: &mut impl rand::RngExt) -> f32 {
+    let u1: f32 = rng.random_range(1e-6f32..1.0);
+    let u2: f32 = rng.random::<f32>();
+    (-2.0 * u1.ln()).sqrt() * (2.0 * PI * u2).cos()
+}
+
 fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
     let t = ((x - edge0) / (edge1 - edge0).max(1e-6)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
@@ -57,10 +68,17 @@ pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Star> {
                 break candidate;
             }
         };
-        let phi: f32 = 2.0 * PI * rng.random::<f32>();
+        let t = (r / config.radius).clamp(0.0, 1.0);
+
+        let phi = if rng.random::<f32>() < ARM_FRACTION {
+            let arm_index = rng.random_range(0..NUM_ARMS) as f32;
+            let arm_angle = arm_index * (2.0 * PI / NUM_ARMS as f32) + ARM_TWIST * t;
+            arm_angle + gaussian(&mut rng) * ARM_SPREAD
+        } else {
+            2.0 * PI * rng.random::<f32>()
+        };
 
         let v = -(G * config.core_mass / r.max(1.0)).sqrt();
-        let t = (r / config.radius).clamp(0.0, 1.0);
 
         let color = if rng.random::<f32>() < WOLF_RAYET_FRACTION {
             // Rare, extremely hot star that has blown off its outer layers,

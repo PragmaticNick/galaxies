@@ -27,11 +27,11 @@ impl App {
         let config = GalaxyConfig {
             center: [0.0, 0.0],
             radius: 300.0,
-            star_count: 60000,
+            star_count: 3000,
             core_mass: 50000.0,
             core_radius: 6.0,
             star_mass: 0.1,
-            star_radius: 1.0,
+            star_radius: 2.0,
             gap: 20.0,
         };
 
@@ -40,14 +40,14 @@ impl App {
             stars: generate_galaxy(&config),
             last_frame: None,
             time: 0.0,
-            strategy: PhysicsStrategy::Rayon,
+            strategy: PhysicsStrategy::Direct,
         }
     }
 
     fn handle_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, is_pressed: bool) {
         match (code, is_pressed) {
             (KeyCode::Escape, true) => event_loop.exit(),
-            (KeyCode::Digit1, true) => self.set_strategy(PhysicsStrategy::PlainLoop),
+            (KeyCode::Digit1, true) => self.set_strategy(PhysicsStrategy::Direct),
             (KeyCode::Digit2, true) => self.set_strategy(PhysicsStrategy::Rayon),
             (KeyCode::Digit3, true) => self.set_strategy(PhysicsStrategy::FmmSerial),
             (KeyCode::Digit4, true) => self.set_strategy(PhysicsStrategy::FmmRayon),
@@ -93,7 +93,7 @@ impl ApplicationHandler for App {
                 };
                 self.last_frame = Some(now);
                 self.time += dt;
-                // update_physics(&mut self.stars, dt, self.strategy);
+                update_physics(&mut self.stars, dt, self.strategy);
                 match renderer.render(&self.stars, self.strategy.name()) {
                     Ok(_) => {}
                     Err(e) => {
