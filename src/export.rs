@@ -26,9 +26,9 @@ const TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 // Displayed FPS is faked to look like a live capture: it hovers around
 // FAKE_FPS_BASE and occasionally dips/peaks toward the min/max instead of
 // staying pinned at the export's fixed frame rate.
-const FAKE_FPS_BASE: f32 = 44.0;
-const FAKE_FPS_MIN: f32 = 40.0;
-const FAKE_FPS_MAX: f32 = 45.0;
+const FAKE_FPS_BASE: f32 = 39.0;
+const FAKE_FPS_MIN: f32 = 37.0;
+const FAKE_FPS_MAX: f32 = 43.0;
 
 fn gaussian(rng: &mut impl rand::RngExt) -> f32 {
     let u1: f32 = rng.random_range(1e-6f32..1.0);

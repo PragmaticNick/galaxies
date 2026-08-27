@@ -27,7 +27,7 @@ impl App {
         let config = GalaxyConfig {
             center: [0.0, 0.0],
             radius: 300.0,
-            star_count: 3000,
+            star_count: 10000,
             core_mass: 50000.0,
             core_radius: 6.0,
             star_mass: 0.1,
@@ -40,7 +40,7 @@ impl App {
             stars: generate_galaxy(&config),
             last_frame: None,
             time: 0.0,
-            strategy: PhysicsStrategy::Direct,
+            strategy: PhysicsStrategy::FmmSerial,
         }
     }
 

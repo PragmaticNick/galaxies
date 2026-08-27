@@ -19,7 +19,7 @@ pub fn run() -> anyhow::Result<()> {
         let config = GalaxyConfig {
             center: [0.0, 0.0],
             radius: 300.0,
-            star_count: 3000,
+            star_count: 6000,
             core_mass: 50000.0,
             core_radius: 6.0,
             star_mass: 0.1,
@@ -27,7 +27,7 @@ pub fn run() -> anyhow::Result<()> {
             gap: 20.0,
         };
 
-        cfg.strategy = PhysicsStrategy::Direct;
+        cfg.strategy = PhysicsStrategy::FmmSerial;
 
         let stars = generate_galaxy(&config);
         return export::export_video(&cfg, stars);
@@ -65,7 +65,7 @@ fn parse_export_args() -> anyhow::Result<Option<ExportConfig>> {
         strategy: find_flag_value(&args, "--strategy")
             .map(|v| parse_strategy(&v))
             .transpose()?
-            .unwrap_or(PhysicsStrategy::FmmRayon),
+            .unwrap_or(PhysicsStrategy::FmmSerial),
         output,
     }))
 }

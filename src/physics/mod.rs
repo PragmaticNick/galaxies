@@ -19,7 +19,7 @@ impl PhysicsStrategy {
         match self {
             PhysicsStrategy::Direct => "direct",
             PhysicsStrategy::Rayon => "rayon",
-            PhysicsStrategy::FmmSerial => "fmm (serial)",
+            PhysicsStrategy::FmmSerial => "fmm",
             PhysicsStrategy::FmmRayon => "fmm (rayon)",
         }
     }
