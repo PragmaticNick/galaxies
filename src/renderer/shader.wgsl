@@ -1,9 +1,4 @@
-struct CameraUniform {
-    proj: mat4x4<f32>,
-};
-
-@group(0) @binding(0)
-var<uniform> camera: CameraUniform;
+@group(0) @binding(0) var<uniform> screen_size: vec2<f32>;
 
 struct Star {
     pos: vec2<f32>,
@@ -15,14 +10,11 @@ struct Star {
 
 @group(1) @binding(0) var<storage, read> stars: array<Star>;
 
-struct SimParams {
-    dt: f32,
-    eps: f32,
-    g: f32,
-    radius: f32,
+struct GalaxyParams {
     center: vec2<f32>,
+    radius: f32,
 };
-@group(2) @binding(0) var<uniform> sim: SimParams;
+@group(2) @binding(0) var<uniform> galaxy: GalaxyParams;
 
 fn arm_color(t: f32) -> vec3<f32> {
     let white = vec3<f32>(1.0, 1.0, 1.0);
@@ -62,15 +54,14 @@ fn vs_main(@builtin(vertex_index) i: u32) -> VertexOutput {
 
     let world_pos = s.pos + local * s.radius;
 
-    let dist = length(s.pos - sim.center);
-    let t = clamp(dist / sim.radius, 0.0, 1.0);
+    let t = clamp(length(s.pos - galaxy.center) / galaxy.radius, 0.0, 1.0);
     var color = arm_color(t) * 0.25;
     if (star_index == 0u) {
         color = vec3<f32>(1.0, 1.0, 1.0);
     }
 
     var out: VertexOutput;
-    out.clip_position = camera.proj * vec4<f32>(world_pos, 0.0, 1.0);
+    out.clip_position = vec4<f32>(world_pos * 2.0 / screen_size, 0.0, 1.0);
     out.local = local;
     out.color = color;
 

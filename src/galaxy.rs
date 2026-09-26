@@ -2,6 +2,7 @@ use std::f32::consts::PI;
 
 use rand::RngExt;
 
+use crate::simulation::{EPS, G};
 use crate::star::Star;
 
 pub struct GalaxyConfig {
@@ -15,7 +16,7 @@ pub struct GalaxyConfig {
     pub gap: f32,
 }
 
-pub fn generate_galaxy(config: &GalaxyConfig, eps: f32, g: f32) -> Vec<Star> {
+pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Star> {
     let mut rng = rand::rng();
 
     let disk_mass_total = config.star_mass * config.star_count as f32;
@@ -23,7 +24,6 @@ pub fn generate_galaxy(config: &GalaxyConfig, eps: f32, g: f32) -> Vec<Star> {
 
     let mut stars = vec![Star {
         pos: config.center,
-        vel: [0.0, 0.0],
         mass: config.core_mass,
         radius: config.core_radius,
         ..bytemuck::Zeroable::zeroed()
@@ -34,11 +34,9 @@ pub fn generate_galaxy(config: &GalaxyConfig, eps: f32, g: f32) -> Vec<Star> {
         let phi: f32 = 2.0 * PI * rng.random::<f32>();
 
         let r = config.gap + r_unit * disk_span;
-
-        let r_norm = ((r - config.gap) / disk_span).clamp(0.0, 1.0);
-        let m_enclosed = config.core_mass + disk_mass_total * r_norm;
-        let softened = (r * r + eps * eps).powf(1.5);
-        let v = -(g * m_enclosed * r * r / softened).sqrt();
+        let m_enclosed = config.core_mass + disk_mass_total * r_unit;
+        let softened = (r * r + EPS * EPS).powf(1.5);
+        let v = -(G * m_enclosed * r * r / softened).sqrt();
 
         stars.push(Star {
             pos: [
