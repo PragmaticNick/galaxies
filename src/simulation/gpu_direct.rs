@@ -2,7 +2,6 @@ use wgpu::BufferBindingType::{Storage, Uniform};
 
 use crate::gpu::{GpuContext, dispatch};
 use crate::simulation::{EPS, G, Simulation};
-use crate::star::Star;
 
 const WORKGROUP_SIZE: usize = 256;
 
@@ -15,8 +14,8 @@ pub struct GpuDirect {
     commit_pipeline: wgpu::ComputePipeline,
 }
 
-impl Simulation for GpuDirect {
-    fn init(gpu: &GpuContext, buffer: &wgpu::Buffer, stars: Vec<Star>) -> Self {
+impl GpuDirect {
+    pub fn new(gpu: &GpuContext, buffer: &wgpu::Buffer, star_count: usize) -> Self {
         let shader = gpu
             .device
             .create_shader_module(wgpu::include_wgsl!("gpu_direct.wgsl"));
@@ -24,7 +23,7 @@ impl Simulation for GpuDirect {
         let layout = gpu.compute_bind_group_layout(&[Storage { read_only: false }, Uniform]);
 
         Self {
-            workgroup_count: stars.len().div_ceil(WORKGROUP_SIZE) as u32,
+            workgroup_count: star_count.div_ceil(WORKGROUP_SIZE) as u32,
             bind_group: gpu.bind_group(&layout, &[buffer, &params_buffer]),
             params_buffer,
             drift_pipeline: gpu.compute_pipeline(&shader, &layout, "drift_half"),
@@ -32,7 +31,9 @@ impl Simulation for GpuDirect {
             commit_pipeline: gpu.compute_pipeline(&shader, &layout, "commit"),
         }
     }
+}
 
+impl Simulation for GpuDirect {
     fn step(
         &mut self,
         gpu: &GpuContext,

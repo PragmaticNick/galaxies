@@ -1,11 +1,12 @@
 use crate::gpu::GpuContext;
-use crate::star::Star;
 
 mod cpu_direct;
 mod gpu_direct;
+mod particle_mesh;
 
 pub use cpu_direct::CpuDirect;
 pub use gpu_direct::GpuDirect;
+pub use particle_mesh::ParticleMesh;
 
 pub const G: f32 = 100.0;
 pub const EPS: f32 = 30.0;
@@ -15,6 +16,10 @@ pub const EPS: f32 = 30.0;
 pub enum Strategy {
     GpuDirect,
     CpuDirect,
+    ParticleMesh {
+        size: i32,
+        h: f32,
+    },
 }
 
 impl Strategy {
@@ -22,15 +27,12 @@ impl Strategy {
         match self {
             Strategy::GpuDirect => "gpu direct",
             Strategy::CpuDirect => "cpu direct",
+            Strategy::ParticleMesh { .. } => "particle mesh",
         }
     }
 }
 
 pub trait Simulation {
-    fn init(gpu: &GpuContext, buffer: &wgpu::Buffer, stars: Vec<Star>) -> Self
-    where
-        Self: Sized;
-
     fn step(
         &mut self,
         gpu: &GpuContext,
