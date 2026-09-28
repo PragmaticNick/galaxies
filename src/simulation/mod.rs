@@ -9,7 +9,7 @@ pub use gpu_direct::GpuDirect;
 pub use particle_mesh::ParticleMesh;
 
 pub const G: f32 = 100.0;
-pub const EPS: f32 = 30.0;
+pub const EPS: f32 = 8.0;
 
 #[allow(dead_code)]
 #[derive(Clone, Copy)]

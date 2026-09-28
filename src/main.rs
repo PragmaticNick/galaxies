@@ -20,7 +20,8 @@ mod renderer;
 mod simulation;
 mod star;
 
-const STRATEGY: Strategy = Strategy::ParticleMesh { size: 64, h: 10.0 };
+const STRATEGY: Strategy = Strategy::ParticleMesh { size: 128, h: 10.0 };
+// const STRATEGY: Strategy = Strategy::GpuDirect;
 
 /// Simulated time per second of wall time.
 const TIME_SCALE: f32 = 0.1;
