@@ -9,17 +9,32 @@ pub const G: f32 = 100.0;
 pub const EPS: f32 = 2.0;
 pub const TIME_SCALE: f32 = 0.5;
 
-pub const GALAXY: GalaxyConfig = GalaxyConfig {
-    center: [0.0, 0.0],
-    radius: 400.0,
-    star_count: 2500000,
-    core_radius: 2.0,
-    core_mass: 500000.0,
-    star_mass: 0.1,
-    star_radius: 0.5,
-    gap: 20.0,
-    arms: 5,
-};
+pub const GALAXIES: &[GalaxyConfig] = &[
+    GalaxyConfig {
+        center: [-700.0, -200.0],
+        velocity: [100.0, 0.0],
+        radius: 400.0,
+        star_count: 1500000,
+        core_radius: 2.0,
+        core_mass: 500000.0,
+        star_mass: 0.1,
+        star_radius: 0.5,
+        gap: 20.0,
+        arms: 5,
+    },
+    GalaxyConfig {
+        center: [700.0, 200.0],
+        velocity: [-162.5, 0.0],
+        radius: 300.0,
+        star_count: 1000000,
+        core_radius: 2.0,
+        core_mass: 300000.0,
+        star_mass: 0.1,
+        star_radius: 0.5,
+        gap: 20.0,
+        arms: 3,
+    },
+];
 
 pub const GAP_RAMP_WIDTH: f32 = 0.7;
 pub const EDGE_RAMP_WIDTH: f32 = 0.15;

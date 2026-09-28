@@ -7,6 +7,7 @@ use crate::star::Star;
 
 pub struct GalaxyConfig {
     pub center: [f32; 2],
+    pub velocity: [f32; 2],
     pub radius: f32,
     pub star_count: u32,
     pub core_mass: f32,
@@ -86,8 +87,10 @@ pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Star> {
     disk.sort_by(|a, b| a.0.total_cmp(&b.0));
 
     let [cx, cy] = config.center;
+    let [vx, vy] = config.velocity;
     let mut stars = vec![Star {
         pos: config.center,
+        vel: config.velocity,
         mass: config.core_mass,
         radius: config.core_radius,
         color: [1.0, 1.0, 1.0],
@@ -101,7 +104,7 @@ pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Star> {
 
         stars.push(Star {
             pos: [cx + r * phi.cos(), cy + r * phi.sin()],
-            vel: [-phi.sin() * v, phi.cos() * v],
+            vel: [vx - phi.sin() * v, vy + phi.cos() * v],
             mass: config.star_mass,
             radius: config.star_radius,
             color,

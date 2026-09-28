@@ -9,7 +9,7 @@ use winit::{
     window::{Fullscreen, Window, WindowId},
 };
 
-use crate::config::{GALAXY, STRATEGY, TIME_SCALE, VIEW_RADIUS, ZOOM_STEP};
+use crate::config::{GALAXIES, STRATEGY, TIME_SCALE, VIEW_RADIUS, ZOOM_STEP};
 use crate::galaxy::generate_galaxy;
 use crate::gpu::GpuContext;
 use crate::renderer::Renderer;
@@ -34,7 +34,7 @@ struct Engine {
 impl Engine {
     async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
         let gpu = GpuContext::new(window).await?;
-        let stars = generate_galaxy(&GALAXY);
+        let stars: Vec<_> = GALAXIES.iter().flat_map(generate_galaxy).collect();
 
         let star_buffer = gpu.storage_buffer(&stars);
 

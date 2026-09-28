@@ -288,6 +288,7 @@ mod tests {
     fn pm_matches_direct() {
         let stars = generate_galaxy(&GalaxyConfig {
             center: [0.0, 0.0],
+            velocity: [0.0, 0.0],
             radius: 200.0,
             star_count: 2000,
             core_mass: 500000.0,

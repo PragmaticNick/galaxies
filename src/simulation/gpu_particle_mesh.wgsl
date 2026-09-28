@@ -65,11 +65,8 @@ fn drift_deposit(@builtin(global_invocation_id) gid: vec3<u32>) {
         return;
     }
 
-    var pos = stars[index].pos;
-    if index != 0u {
-        pos += 0.5 * stars[index].vel * params.dt;
-        stars[index].pos = pos;
-    }
+    let pos = stars[index].pos + 0.5 * stars[index].vel * params.dt;
+    stars[index].pos = pos;
 
     let c = cell(pos);
     if !c.ok {
@@ -189,9 +186,7 @@ fn kick_drift(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     vel += a * params.dt;
 
-    if index != 0u {
-        pos += 0.5 * vel * params.dt;
-    }
+    pos += 0.5 * vel * params.dt;
 
     stars[index].pos = pos;
     stars[index].vel = vel;

@@ -132,6 +132,7 @@ mod tests {
         };
         let stars = generate_galaxy(&GalaxyConfig {
             center: [0.0, 0.0],
+            velocity: [0.0, 0.0],
             radius: 200.0,
             star_count: 5000,
             core_mass: 500000.0,

@@ -22,7 +22,7 @@ struct SimParams {
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn drift_half(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x;
-    if i == 0u || i >= arrayLength(&stars) {
+    if i >= arrayLength(&stars) {
         return;
     }
     stars[i].pos += 0.5 * stars[i].vel * sim.dt;
@@ -79,7 +79,7 @@ fn kick(
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn commit(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x;
-    if i == 0u || i >= arrayLength(&stars) {
+    if i >= arrayLength(&stars) {
         return;
     }
     stars[i].pos = stars[i]._pad;
