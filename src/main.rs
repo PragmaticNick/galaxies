@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use winit::{
     application::ApplicationHandler,
-    event::{KeyEvent, WindowEvent},
+    event::{KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
     window::{Fullscreen, Window, WindowId},
@@ -28,15 +28,15 @@ const STRATEGY: Strategy = Strategy::GpuParticleMeshFft { size: 511, h: 5.0 };
 
 const VIEW_RADIUS: f32 = 800.0;
 
-const TIME_SCALE: f32 = 0.1;
+const TIME_SCALE: f32 = 0.5;
 
 const GALAXY: GalaxyConfig = GalaxyConfig {
     center: [0.0, 0.0],
     radius: 400.0,
-    star_count: 2000000,
+    star_count: 2500000,
     core_radius: 2.0,
     core_mass: 500000.0,
-    star_mass: 0.25,
+    star_mass: 0.1,
     star_radius: 1.5,
     gap: 20.0,
     arms: 5,
@@ -108,6 +108,8 @@ impl Engine {
 struct App {
     engine: Option<Engine>,
     last_frame: Option<Instant>,
+    cursor: [f32; 2],
+    dragging: bool,
 }
 
 impl ApplicationHandler for App {
@@ -145,7 +147,25 @@ impl ApplicationHandler for App {
             } => event_loop.exit(),
             WindowEvent::Resized(size) => {
                 engine.gpu.resize(size.width, size.height);
-                engine.renderer.resize(&engine.gpu);
+                engine.renderer.update_view(&engine.gpu);
+            }
+            WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => {
+                self.dragging = state.is_pressed();
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                let cursor = [position.x as f32, position.y as f32];
+                if self.dragging {
+                    let (dx, dy) = (cursor[0] - self.cursor[0], cursor[1] - self.cursor[1]);
+                    engine.renderer.pan(&engine.gpu, dx, dy);
+                }
+                self.cursor = cursor;
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let lines = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => y,
+                    MouseScrollDelta::PixelDelta(p) => p.y as f32 / 100.0,
+                };
+                engine.renderer.zoom(&engine.gpu, 0.9f32.powf(lines), self.cursor);
             }
             WindowEvent::RedrawRequested => {
                 let now = Instant::now();

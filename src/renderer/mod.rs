@@ -7,6 +7,7 @@ pub struct Renderer {
     pipeline: wgpu::RenderPipeline,
     grid: Option<(wgpu::RenderPipeline, wgpu::BindGroup)>,
     view_radius: f32,
+    center: [f32; 2],
     grid_half: f32,
     view_buffer: wgpu::Buffer,
     view_bind_group: wgpu::BindGroup,
@@ -30,7 +31,7 @@ impl Renderer {
         let pipeline =
             gpu.render_pipeline(&shader, additive_blend(), wgpu::PrimitiveTopology::TriangleList);
 
-        let view_buffer = gpu.uniform_buffer(&view_params(gpu, view_radius, grid_half.unwrap_or(0.0)));
+        let view_buffer = gpu.uniform_buffer(&[0.0f32; 8]);
         let layout = |group| pipeline.get_bind_group_layout(group);
 
         let grid = grid_half.map(|_| {
@@ -43,21 +44,55 @@ impl Renderer {
             (pipeline, bind_group)
         });
 
-        Self {
+        let renderer = Self {
             view_bind_group: gpu.bind_group(&layout(0), &[&view_buffer]),
             star_bind_group: gpu.bind_group(&layout(1), &[stars]),
             pipeline,
             grid,
             view_radius,
+            center: [0.0, 0.0],
             grid_half: grid_half.unwrap_or(0.0),
             view_buffer,
             star_count: star_count as u32,
             overlay: TextOverlay::new(gpu, star_count, strategy_name),
-        }
+        };
+        renderer.update_view(gpu);
+        renderer
     }
 
-    pub fn resize(&self, gpu: &GpuContext) {
-        gpu.write(&self.view_buffer, &view_params(gpu, self.view_radius, self.grid_half));
+    pub fn update_view(&self, gpu: &GpuContext) {
+        let aspect = gpu.config.width as f32 / gpu.config.height as f32;
+        let r = self.view_radius;
+        let [cx, cy] = self.center;
+        gpu.write(&self.view_buffer, &[1.0 / (r * aspect), 1.0 / r, cx, cy, self.grid_half, 0.0, 0.0, 0.0]);
+    }
+
+    pub fn pan(&mut self, gpu: &GpuContext, dx: f32, dy: f32) {
+        let k = self.world_per_pixel(gpu);
+        self.center[0] -= dx * k;
+        self.center[1] += dy * k;
+        self.update_view(gpu);
+    }
+
+    pub fn zoom(&mut self, gpu: &GpuContext, factor: f32, cursor: [f32; 2]) {
+        let before = self.to_world(gpu, cursor);
+        self.view_radius *= factor;
+        let after = self.to_world(gpu, cursor);
+        self.center[0] += before[0] - after[0];
+        self.center[1] += before[1] - after[1];
+        self.update_view(gpu);
+    }
+
+    fn world_per_pixel(&self, gpu: &GpuContext) -> f32 {
+        2.0 * self.view_radius / gpu.config.height as f32
+    }
+
+    fn to_world(&self, gpu: &GpuContext, pixel: [f32; 2]) -> [f32; 2] {
+        let k = self.world_per_pixel(gpu);
+        [
+            self.center[0] + (pixel[0] - gpu.config.width as f32 / 2.0) * k,
+            self.center[1] - (pixel[1] - gpu.config.height as f32 / 2.0) * k,
+        ]
     }
 
     pub fn draw(
@@ -82,11 +117,6 @@ impl Renderer {
 
         self.overlay.draw(&mut pass);
     }
-}
-
-fn view_params(gpu: &GpuContext, view_radius: f32, grid_half: f32) -> [f32; 4] {
-    let aspect = gpu.config.width as f32 / gpu.config.height as f32;
-    [1.0 / (view_radius * aspect), 1.0 / view_radius, grid_half, 0.0]
 }
 
 fn additive_blend() -> wgpu::BlendState {
