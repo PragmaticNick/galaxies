@@ -9,38 +9,20 @@ use winit::{
     window::{Fullscreen, Window, WindowId},
 };
 
-use crate::galaxy::{GalaxyConfig, generate_galaxy};
+use crate::config::{GALAXY, STRATEGY, TIME_SCALE, VIEW_RADIUS, ZOOM_STEP};
+use crate::galaxy::generate_galaxy;
 use crate::gpu::GpuContext;
 use crate::renderer::Renderer;
 use crate::simulation::{
     CpuDirect, GpuDirect, GpuParticleMesh, ParticleMesh, Simulation, Strategy,
 };
 
+mod config;
 mod galaxy;
 mod gpu;
 mod renderer;
 mod simulation;
 mod star;
-
-const STRATEGY: Strategy = Strategy::GpuParticleMeshFft { size: 1023, h: 5.0 };
-// const STRATEGY: Strategy = Strategy::ParticleMesh { size: 128, h: 10.0 };
-// const STRATEGY: Strategy = Strategy::GpuDirect;
-
-const VIEW_RADIUS: f32 = 800.0;
-
-const TIME_SCALE: f32 = 0.5;
-
-const GALAXY: GalaxyConfig = GalaxyConfig {
-    center: [0.0, 0.0],
-    radius: 400.0,
-    star_count: 2500000,
-    core_radius: 2.0,
-    core_mass: 500000.0,
-    star_mass: 0.1,
-    star_radius: 1.5,
-    gap: 20.0,
-    arms: 5,
-};
 
 struct Engine {
     gpu: GpuContext,
@@ -147,7 +129,7 @@ impl ApplicationHandler for App {
             } => event_loop.exit(),
             WindowEvent::Resized(size) => {
                 engine.gpu.resize(size.width, size.height);
-                engine.renderer.update_view(&engine.gpu);
+                engine.renderer.resize(&engine.gpu);
             }
             WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => {
                 self.dragging = state.is_pressed();
@@ -165,7 +147,7 @@ impl ApplicationHandler for App {
                     MouseScrollDelta::LineDelta(_, y) => y,
                     MouseScrollDelta::PixelDelta(p) => p.y as f32 / 100.0,
                 };
-                engine.renderer.zoom(&engine.gpu, 0.9f32.powf(lines), self.cursor);
+                engine.renderer.zoom(&engine.gpu, ZOOM_STEP.powf(lines), self.cursor);
             }
             WindowEvent::RedrawRequested => {
                 let now = Instant::now();

@@ -297,7 +297,7 @@ mod tests {
             gap: 20.0,
             arms: 2,
         });
-        let mut pm = ParticleMesh::new_fft(stars.clone(), 127, 5.0);
+        let mut pm = ParticleMesh::new_fft(stars.clone(), 511, 1.25);
         let mut direct = CpuDirect::new(stars.clone());
         for _ in 0..10 {
             pm.update(0.004);

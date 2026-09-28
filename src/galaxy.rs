@@ -2,7 +2,7 @@ use std::f32::consts::PI;
 
 use rand::RngExt;
 
-use crate::simulation::{EPS, G};
+use crate::config::{GAP_RAMP_WIDTH, EDGE_RAMP_WIDTH, ARM_TWIST, ARM_SPREAD, ARM_FRACTION, BULGE_RADIUS, BULGE_COLOR, YOUNG_COLORS, OLD_COLORS, HII_FRACTION, HII_CLUMPS, HII_SPREAD, HII_COLOR, EPS, G};
 use crate::star::Star;
 
 pub struct GalaxyConfig {
@@ -16,27 +16,6 @@ pub struct GalaxyConfig {
     pub gap: f32,
     pub arms: u32,
 }
-
-const GAP_RAMP_WIDTH: f32 = 0.7;
-const EDGE_RAMP_WIDTH: f32 = 0.15;
-
-const WOLF_RAYET_FRACTION: f32 = 0.04;
-const WOLF_RAYET_COLOR: [f32; 3] = [0.36, 0.12, 0.6];
-
-const ARM_TWIST: f32 = 2.5;
-const ARM_SPREAD: f32 = 0.55;
-const ARM_FRACTION: f32 = 0.45;
-
-const SPECTRUM: [[f32; 3]; 7] = [
-    [0.55, 0.75, 1.0],
-    [0.65, 0.8, 1.0],
-    [0.85, 0.9, 1.0],
-    [1.0, 0.95, 0.8],
-    [1.0, 0.75, 0.25],
-    [1.0, 0.55, 0.2],
-    [1.0, 0.35, 0.2],
-];
-const SPECTRUM_BRIGHTNESS: f32 = 0.25;
 
 fn gaussian(rng: &mut impl RngExt) -> f32 {
     let u1: f32 = rng.random_range(1e-6f32..1.0);
@@ -57,20 +36,31 @@ fn radial_weight(r: f32, gap: f32, radius: f32) -> f32 {
     inner * outer
 }
 
-fn spectrum_color(t: f32) -> [f32; 3] {
-    let x = t * (SPECTRUM.len() - 1) as f32;
-    let i = (x as usize).min(SPECTRUM.len() - 2);
-    let f = x - i as f32;
-    let (a, b) = (SPECTRUM[i], SPECTRUM[i + 1]);
-    [0, 1, 2].map(|c| (a[c] + (b[c] - a[c]) * f) * SPECTRUM_BRIGHTNESS)
+fn mix(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
+    [0, 1, 2].map(|c| a[c] + (b[c] - a[c]) * t)
 }
 
 pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Star> {
     let mut rng = rand::rng();
     let r_max = config.radius * (1.0 + EDGE_RAMP_WIDTH * 2.0);
 
+    let arm_angle = |arm: u32, t: f32| arm as f32 * 2.0 * PI / config.arms as f32 + ARM_TWIST * t;
+    let clumps: Vec<(f32, f32)> = (0..HII_CLUMPS)
+        .map(|_| {
+            let t = rng.random_range(0.2..1.0);
+            (t * config.radius, arm_angle(rng.random_range(0..config.arms), t))
+        })
+        .collect();
+
     let mut disk: Vec<(f32, f32, [f32; 3])> = (0..config.star_count)
         .map(|_| {
+            if rng.random::<f32>() < HII_FRACTION {
+                let (r, phi) = clumps[rng.random_range(0..HII_CLUMPS)];
+                let spread = HII_SPREAD * config.radius;
+                let r = (r + gaussian(&mut rng) * spread).max(config.gap);
+                return (r, phi + gaussian(&mut rng) * spread / r, HII_COLOR);
+            }
+
             let r = loop {
                 let candidate = rng.random::<f32>().sqrt() * r_max;
                 if rng.random::<f32>() < radial_weight(candidate, config.gap, config.radius) {
@@ -79,20 +69,17 @@ pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Star> {
             };
             let t = (r / config.radius).min(1.0);
 
-            let phi = if rng.random::<f32>() < ARM_FRACTION {
-                let arm = rng.random_range(0..config.arms) as f32;
-                arm * 2.0 * PI / config.arms as f32 + ARM_TWIST * t + gaussian(&mut rng) * ARM_SPREAD
+            let in_arm = rng.random::<f32>() < ARM_FRACTION;
+            let (phi, colors) = if in_arm {
+                let arm = rng.random_range(0..config.arms);
+                (arm_angle(arm, t) + gaussian(&mut rng) * ARM_SPREAD, YOUNG_COLORS)
             } else {
-                2.0 * PI * rng.random::<f32>()
+                (2.0 * PI * rng.random::<f32>(), OLD_COLORS)
             };
 
-            let color = if rng.random::<f32>() < WOLF_RAYET_FRACTION {
-                WOLF_RAYET_COLOR
-            } else {
-                spectrum_color(t)
-            };
-
-            (r, phi, color)
+            let color = colors[rng.random_range(0..colors.len())];
+            let bulge = (-(t / BULGE_RADIUS).powi(2)).exp();
+            (r, phi, mix(color, BULGE_COLOR, bulge))
         })
         .collect();
 

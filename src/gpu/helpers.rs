@@ -98,8 +98,10 @@ impl GpuContext {
     pub fn render_pipeline(
         &self,
         shader: &wgpu::ShaderModule,
+        format: wgpu::TextureFormat,
         blend: wgpu::BlendState,
         topology: wgpu::PrimitiveTopology,
+        constants: &[(&str, f64)],
     ) -> wgpu::RenderPipeline {
         self.device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -109,17 +111,23 @@ impl GpuContext {
                     module: shader,
                     entry_point: Some("vs_main"),
                     buffers: &[],
-                    compilation_options: Default::default(),
+                    compilation_options: wgpu::PipelineCompilationOptions {
+                        constants,
+                        ..Default::default()
+                    },
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: shader,
                     entry_point: Some("fs_main"),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: self.config.format,
+                        format,
                         blend: Some(blend),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
-                    compilation_options: Default::default(),
+                    compilation_options: wgpu::PipelineCompilationOptions {
+                        constants,
+                        ..Default::default()
+                    },
                 }),
                 primitive: wgpu::PrimitiveState {
                     topology,

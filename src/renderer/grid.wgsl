@@ -5,6 +5,8 @@ struct View {
     world_per_pixel: f32,
 };
 
+override GRID_BRIGHTNESS: f32;
+
 @group(0) @binding(0) var<uniform> view: View;
 
 const CORNERS: array<vec2<f32>, 8> = array<vec2<f32>, 8>(
@@ -21,5 +23,5 @@ fn vs_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
 
 @fragment
 fn fs_main() -> @location(0) vec4<f32> {
-    return vec4<f32>(0.3, 0.3, 0.3, 1.0);
+    return vec4<f32>(vec3<f32>(GRID_BRIGHTNESS), 1.0);
 }

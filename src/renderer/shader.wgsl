@@ -1,4 +1,6 @@
-const MIN_RADIUS_PX: f32 = 1.0;
+override MIN_RADIUS_PX: f32;
+override GLOW_SIZE: f32;
+override GLOW_STRENGTH: f32;
 
 struct View {
     scale: vec2<f32>,
@@ -43,7 +45,7 @@ fn vs_main(@builtin(vertex_index) i: u32) -> VertexOutput {
     let corner = i % 6u;
 
     let s = stars[star_index];
-    let local = QUAD[corner];
+    let local = QUAD[corner] * GLOW_SIZE;
 
     let radius = max(s.radius, MIN_RADIUS_PX * view.world_per_pixel);
     let world_pos = s.pos + local * radius;
@@ -60,8 +62,9 @@ fn vs_main(@builtin(vertex_index) i: u32) -> VertexOutput {
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let dist = length(in.local);
     let edge = fwidth(dist);
-    let coverage = 1.0 - smoothstep(1.0 - edge, 1.0 + edge, dist);
-    return vec4<f32>(in.color * coverage, 1.0);
+    let core = 1.0 - smoothstep(1.0 - edge, 1.0 + edge, dist);
+    let glow = GLOW_STRENGTH * pow(max(1.0 - dist / GLOW_SIZE, 0.0), 3.0);
+    return vec4<f32>(in.color * (core + glow), 1.0);
 }
 
 

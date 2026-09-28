@@ -13,8 +13,7 @@ pub use gpu_direct::GpuDirect;
 pub use gpu_particle_mesh::GpuParticleMesh;
 pub use particle_mesh::ParticleMesh;
 
-pub const G: f32 = 100.0;
-pub const EPS: f32 = 8.0;
+pub use crate::config::{EPS, G};
 
 #[allow(dead_code)]
 #[derive(Clone, Copy)]
