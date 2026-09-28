@@ -20,6 +20,10 @@ pub enum Strategy {
         size: i32,
         h: f32,
     },
+    ParticleMeshFft {
+        size: i32,
+        h: f32,
+    },
 }
 
 impl Strategy {
@@ -28,6 +32,7 @@ impl Strategy {
             Strategy::GpuDirect => "gpu direct",
             Strategy::CpuDirect => "cpu direct",
             Strategy::ParticleMesh { .. } => "particle mesh",
+            Strategy::ParticleMeshFft { .. } => "particle mesh fft",
         }
     }
 }

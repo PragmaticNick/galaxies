@@ -33,6 +33,12 @@ const GALAXY: GalaxyConfig = GalaxyConfig {
     gap: 20.0,
 };
 
+/// Lower-left corner of a PM grid centered on the galaxy.
+fn grid_origin(size: i32, h: f32) -> (f32, f32) {
+    let half = size as f32 * h / 2.0;
+    (GALAXY.center[0] - half, GALAXY.center[1] - half)
+}
+
 struct Engine {
     gpu: GpuContext,
     star_buffer: wgpu::Buffer,
@@ -59,11 +65,12 @@ impl Engine {
             Strategy::GpuDirect => Box::new(GpuDirect::new(&gpu, &star_buffer, stars.len())),
             Strategy::CpuDirect => Box::new(CpuDirect::new(stars)),
             Strategy::ParticleMesh { size, h } => {
-                // grid centered on the galaxy
-                let half = size as f32 * h / 2.0;
-                let x0 = GALAXY.center[0] - half;
-                let y0 = GALAXY.center[1] - half;
+                let (x0, y0) = grid_origin(size, h);
                 Box::new(ParticleMesh::new(stars, size, h, x0, y0))
+            }
+            Strategy::ParticleMeshFft { size, h } => {
+                let (x0, y0) = grid_origin(size, h);
+                Box::new(ParticleMesh::new_fft(stars, size, h, x0, y0))
             }
         };
 
@@ -214,6 +221,7 @@ fn main() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::star::Star;
 
     /// Runs the app's galaxy with the app's PM grid against CpuDirect.
     /// Slow (direct is O(N²) on 50k stars), run with:
@@ -229,14 +237,8 @@ mod tests {
 
         let stars = generate_galaxy(&GALAXY);
 
-        let half = size as f32 * h / 2.0;
-        let mut pm = ParticleMesh::new(
-            stars.clone(),
-            size,
-            h,
-            GALAXY.center[0] - half,
-            GALAXY.center[1] - half,
-        );
+        let (x0, y0) = grid_origin(size, h);
+        let mut pm = ParticleMesh::new(stars.clone(), size, h, x0, y0);
         let mut direct = CpuDirect::new(stars.clone());
         for _ in 0..steps {
             pm.update(dt);
@@ -265,5 +267,160 @@ mod tests {
 
         // measured ~0.3% for 64x64, h = 10
         assert!(relative < 0.01, "relative error {:.3}% is above 1%", relative * 100.0);
+    }
+
+    /// Step time of PM with the pair-sum node solver vs the FFT one, on the
+    /// app's galaxy. Run with:
+    /// cargo test --release pm_speed -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn pm_speed() {
+        let dt = 0.016;
+        let steps = 20;
+        let stars = generate_galaxy(&GALAXY);
+
+        let time = |pm: &mut ParticleMesh| {
+            pm.update(dt);
+            let start = std::time::Instant::now();
+            for _ in 0..steps {
+                pm.update(dt);
+            }
+            start.elapsed().as_secs_f64() * 1000.0 / steps as f64
+        };
+
+        // same area (640 x 640) with finer and finer grids
+        for (size, h) in [(64, 10.0), (128, 5.0), (256, 2.5), (512, 1.25)] {
+            let (x0, y0) = grid_origin(size, h);
+            let fft = time(&mut ParticleMesh::new_fft(stars.clone(), size, h, x0, y0));
+            let direct = if size <= 256 {
+                let ms = time(&mut ParticleMesh::new(stars.clone(), size, h, x0, y0));
+                format!("{ms:9.2} ms")
+            } else {
+                "  too slow".to_string()
+            };
+            println!("grid {size:3}x{size:3}, h = {h:5.2}: direct {direct}, fft {fft:7.2} ms");
+        }
+    }
+
+    /// How PM (FFT) error against CpuDirect grows over time, for several grids.
+    /// As a baseline, also direct started from positions shifted by 0.001:
+    /// the part of the growth that comes from the system being chaotic, not
+    /// from PM. Uses the app's galaxy with 10x fewer but 10x heavier stars
+    /// (same total mass, same potential) so direct stays affordable. Run with:
+    /// cargo test --release pm_error_growth -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn pm_error_growth() {
+        let galaxy = GalaxyConfig {
+            star_count: GALAXY.star_count / 10,
+            star_mass: GALAXY.star_mass * 10.0,
+            ..GALAXY
+        };
+        let dt = 0.016;
+        let steps = 300;
+        let every = 10;
+        let print_every = 30;
+
+        let stars = generate_galaxy(&galaxy);
+
+        let mean_distance = |a: &[Star], b: &[[f32; 2]]| {
+            let total: f32 = a
+                .iter()
+                .zip(b)
+                .map(|(s, p)| ((s.pos[0] - p[0]).powi(2) + (s.pos[1] - p[1]).powi(2)).sqrt())
+                .sum();
+            total / a.len() as f32
+        };
+
+        // direct positions at every checkpoint
+        let mut direct = CpuDirect::new(stars.clone());
+        let mut reference = Vec::new();
+        for step in 1..=steps {
+            direct.update(dt);
+            if step % every == 0 {
+                reference.push(direct.stars().iter().map(|s| s.pos).collect::<Vec<_>>());
+            }
+        }
+
+        // mean error against direct at every checkpoint
+        let run = |update: &mut dyn FnMut() -> Vec<Star>| {
+            let mut row = Vec::new();
+            for step in 1..=steps {
+                let stars = update();
+                if step % every == 0 {
+                    row.push(mean_distance(&stars, &reference[row.len()]));
+                }
+            }
+            row
+        };
+
+        let mut names = Vec::new();
+        let mut errors = Vec::new();
+
+        let mut shifted = stars.clone();
+        for s in shifted.iter_mut().skip(1) {
+            s.pos[0] += 0.001;
+        }
+        let mut perturbed = CpuDirect::new(shifted);
+        names.push("direct +0.001".to_string());
+        errors.push(run(&mut || {
+            perturbed.update(dt);
+            perturbed.stars().to_vec()
+        }));
+
+        for (size, h) in [(63, 10.0), (127, 5.0), (255, 2.5)] {
+            let (x0, y0) = grid_origin(size, h);
+            let mut pm = ParticleMesh::new_fft(stars.clone(), size, h, x0, y0);
+            names.push(format!("fft {size}x{size} h={h}"));
+            errors.push(run(&mut || {
+                pm.update(dt);
+                pm.stars().to_vec()
+            }));
+        }
+
+        println!("mean error in % of galaxy radius ({})", galaxy.radius);
+        print!("step    time");
+        for name in &names {
+            print!(" | {name:>18}");
+        }
+        println!();
+        for c in (print_every / every - 1..reference.len()).step_by(print_every / every) {
+            let step = (c + 1) * every;
+            print!("{step:4} {:6.2}s", step as f32 * dt);
+            for row in &errors {
+                print!(" | {:17.3}%", row[c] / galaxy.radius * 100.0);
+            }
+            println!();
+        }
+
+        // error ~ e^(t / tau) until it saturates at the galaxy scale: fit the
+        // slope of ln(error) over checkpoints below 5% of the radius
+        println!();
+        for (name, row) in names.iter().zip(&errors) {
+            let points: Vec<(f32, f32)> = row
+                .iter()
+                .enumerate()
+                .filter(|&(_, &e)| e > 0.0 && e < 0.05 * galaxy.radius)
+                .map(|(c, &e)| (((c + 1) * every) as f32, e.ln()))
+                .collect();
+            if points.len() < 2 {
+                println!("{name:>18}: not enough points before saturation");
+                continue;
+            }
+            let k = points.len() as f32;
+            let (sx, sy) = points.iter().fold((0.0, 0.0), |(sx, sy), &(x, y)| (sx + x, sy + y));
+            let (mx, my) = (sx / k, sy / k);
+            let (num, den) = points
+                .iter()
+                .fold((0.0, 0.0), |(n, d), &(x, y)| (n + (x - mx) * (y - my), d + (x - mx).powi(2)));
+            let slope = num / den;
+            let doubling = 2f32.ln() / slope;
+            let reaches = points.last().unwrap().0;
+            println!(
+                "{name:>18}: error doubles every {doubling:4.1} steps ({:.2}s), fitted over steps {}..{reaches}",
+                doubling * dt,
+                points[0].0,
+            );
+        }
     }
 }
