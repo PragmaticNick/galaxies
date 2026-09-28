@@ -1,6 +1,6 @@
 override WORKGROUP_SIZE: u32 = 256u;
 
-const MAX_P: u32 = 1024u;
+const MAX_P: u32 = 2048u;
 
 const PI: f32 = 3.14159265358979;
 
@@ -22,6 +22,8 @@ struct Params {
     p: u32,
     log_p: u32,
     mass_scale: f32,
+    gm: f32,
+    eps2: f32,
 };
 
 @group(0) @binding(0) var<storage, read_write> stars: array<Star>;
@@ -175,13 +177,17 @@ fn kick_drift(@builtin(global_invocation_id) gid: vec3<u32>) {
     var vel = stars[index].vel;
 
     let c = cell(pos);
+    var a: vec2<f32>;
     if c.ok {
-        let a = node_acc(c.i, c.j) * (1.0 - c.dx) * (1.0 - c.dy)
+        a = node_acc(c.i, c.j) * (1.0 - c.dx) * (1.0 - c.dy)
             + node_acc(c.i, c.j + 1) * (1.0 - c.dx) * c.dy
             + node_acc(c.i + 1, c.j) * c.dx * (1.0 - c.dy)
             + node_acc(c.i + 1, c.j + 1) * c.dx * c.dy;
-        vel += a * params.dt;
+    } else {
+        let r2 = dot(pos, pos) + params.eps2;
+        a = -params.gm * pos / (r2 * sqrt(r2));
     }
+    vel += a * params.dt;
 
     if index != 0u {
         pos += 0.5 * vel * params.dt;

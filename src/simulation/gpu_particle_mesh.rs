@@ -2,12 +2,12 @@ use bytemuck::{Pod, Zeroable};
 use wgpu::BufferBindingType::{Storage, Uniform};
 
 use crate::gpu::{GpuContext, dispatch};
-use crate::simulation::Simulation;
+use crate::simulation::{EPS, G, Simulation};
 use crate::simulation::particle_mesh::fft_kernel;
 use crate::star::Star;
 
 const WORKGROUP_SIZE: usize = 256;
-const MAX_P: usize = 1024;
+const MAX_P: usize = 2048;
 const FIXED_POINT_TOTAL: f32 = (1u32 << 30) as f32;
 
 #[repr(C)]
@@ -20,6 +20,8 @@ struct Params {
     p: u32,
     log_p: u32,
     mass_scale: f32,
+    gm: f32,
+    eps2: f32,
 }
 
 pub struct GpuParticleMesh {
@@ -46,6 +48,8 @@ impl GpuParticleMesh {
             p: p as u32,
             log_p: p.trailing_zeros(),
             mass_scale: FIXED_POINT_TOTAL / total_mass,
+            gm: G * total_mass,
+            eps2: EPS * EPS,
         };
 
         let kernel: Vec<[f32; 2]> = kernel.iter().map(|k| [k.re, k.im]).collect();

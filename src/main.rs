@@ -22,7 +22,7 @@ mod renderer;
 mod simulation;
 mod star;
 
-const STRATEGY: Strategy = Strategy::GpuParticleMeshFft { size: 511, h: 5.0 };
+const STRATEGY: Strategy = Strategy::GpuParticleMeshFft { size: 1023, h: 5.0 };
 // const STRATEGY: Strategy = Strategy::ParticleMesh { size: 128, h: 10.0 };
 // const STRATEGY: Strategy = Strategy::GpuDirect;
 

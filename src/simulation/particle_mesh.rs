@@ -166,6 +166,7 @@ enum NodeSolver {
 
 pub struct ParticleMesh {
     stars: Vec<Star>,
+    total_mass: f32,
     grid: Grid,
     acc: Vec<(f32, f32)>,
     solver: NodeSolver,
@@ -184,7 +185,8 @@ impl ParticleMesh {
 
     fn with_solver(stars: Vec<Star>, grid: Grid, solver: NodeSolver) -> Self {
         let acc = vec![(0.0, 0.0); grid.data.len()];
-        Self { stars, grid, acc, solver }
+        let total_mass = stars.iter().map(|s| s.mass).sum();
+        Self { stars, total_mass, grid, acc, solver }
     }
 
     #[cfg(test)]
@@ -207,12 +209,21 @@ impl ParticleMesh {
             NodeSolver::Fft(solver) => solver.solve(&self.grid, &mut self.acc),
         }
 
-        let (grid, acc) = (&self.grid, &self.acc);
+        let (grid, acc, gm) = (&self.grid, &self.acc, G * self.total_mass);
         self.stars.par_iter_mut().for_each(|star| {
-            for (index, w) in grid.weights(star.pos).into_iter().flatten() {
-                star.vel[0] += w * acc[index].0 * dt;
-                star.vel[1] += w * acc[index].1 * dt;
-            }
+            let a = match grid.weights(star.pos) {
+                Some(weights) => weights.iter().fold((0.0, 0.0), |a, &(index, w)| {
+                    (a.0 + w * acc[index].0, a.1 + w * acc[index].1)
+                }),
+                None => {
+                    let [x, y] = star.pos;
+                    let r2 = x * x + y * y + EPS * EPS;
+                    let k = -gm / (r2 * r2.sqrt());
+                    (k * x, k * y)
+                }
+            };
+            star.vel[0] += a.0 * dt;
+            star.vel[1] += a.1 * dt;
         });
 
         drift_half(&mut self.stars, dt);
