@@ -2,7 +2,7 @@ use std::f32::consts::PI;
 
 use rand::RngExt;
 
-use crate::config::{GAP_RAMP_WIDTH, EDGE_RAMP_WIDTH, ARM_TWIST, ARM_SPREAD, ARM_FRACTION, BULGE_RADIUS, BULGE_COLOR, YOUNG_COLORS, OLD_COLORS, HII_FRACTION, HII_CLUMPS, HII_SPREAD, HII_COLOR, EPS, G};
+use crate::config::{GAP_RAMP_WIDTH, EDGE_RAMP_WIDTH, ARM_TWIST, ARM_SPREAD, ARM_FRACTION, BULGE_RADIUS, BULGE_COLOR, YOUNG_COLORS, OLD_COLORS, HII_FRACTION, HII_CLUMPS, HII_SPREAD, LUMINOSITY_MAX, LUMINOSITY_POWER, HII_COLOR, EPS, G};
 use crate::star::Star;
 
 pub struct GalaxyConfig {
@@ -35,6 +35,12 @@ fn radial_weight(r: f32, gap: f32, radius: f32) -> f32 {
     let inner = smoothstep(gap - gap_ramp, gap + gap_ramp, r);
     let outer = 1.0 - smoothstep(radius - edge_ramp, radius + edge_ramp, r);
     inner * outer
+}
+
+fn luminosity(rng: &mut impl RngExt) -> f32 {
+    let u: f32 = rng.random_range(1e-6f32..1.0);
+    let mean = LUMINOSITY_POWER / (LUMINOSITY_POWER - 1.0);
+    (u.powf(-1.0 / LUMINOSITY_POWER) / mean).min(LUMINOSITY_MAX)
 }
 
 fn mix(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
@@ -107,7 +113,7 @@ pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Star> {
             vel: [vx - phi.sin() * v, vy + phi.cos() * v],
             mass: config.star_mass,
             radius: config.star_radius,
-            color,
+            color: color.map(|c| c * luminosity(&mut rng)),
             ..bytemuck::Zeroable::zeroed()
         });
     }
