@@ -2,7 +2,7 @@ use std::f32::consts::PI;
 
 use rand::RngExt;
 
-use crate::config::{GAP_RAMP_WIDTH, EDGE_RAMP_WIDTH, ARM_TWIST, ARM_SPREAD, ARM_FRACTION, BULGE_RADIUS, BULGE_COLOR, YOUNG_COLORS, OLD_COLORS, HII_FRACTION, HII_CLUMPS, HII_SPREAD, LUMINOSITY_MAX, LUMINOSITY_POWER, LUMINOSITY_SIZE, HII_COLOR, EPS, G};
+use crate::config::{GAP_RAMP_WIDTH, EDGE_RAMP_WIDTH, ARM_TWIST, ARM_SPREAD, ARM_FRACTION, BULGE_RADIUS, BULGE_COLOR, YOUNG_COLORS, OLD_COLORS, HII_FRACTION, HII_CLUMPS, HII_SPREAD, CLUSTER_COLOR, CLUSTER_RADIUS, LUMINOSITY_MAX, LUMINOSITY_POWER, LUMINOSITY_SIZE, HII_COLOR, EPS, G};
 use crate::star::Star;
 
 pub struct GalaxyConfig {
@@ -16,6 +16,8 @@ pub struct GalaxyConfig {
     pub star_radius: f32,
     pub gap: f32,
     pub arms: u32,
+    pub clusters: u32,
+    pub cluster_mass: f32,
 }
 
 fn gaussian(rng: &mut impl RngExt) -> f32 {
@@ -92,6 +94,16 @@ pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Star> {
 
     disk.sort_by(|a, b| a.0.total_cmp(&b.0));
 
+    let mut clusters: Vec<(f32, f32)> = (0..config.clusters)
+        .map(|_| {
+            let t = rng.random_range(0.15..1.0);
+            let arm = rng.random_range(0..config.arms);
+            (t * config.radius, arm_angle(arm, t) + gaussian(&mut rng) * ARM_SPREAD)
+        })
+        .collect();
+    clusters.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let cluster_radii: Vec<f32> = clusters.iter().map(|c| c.0).collect();
+
     let [cx, cy] = config.center;
     let [vx, vy] = config.velocity;
     let mut stars = vec![Star {
@@ -103,18 +115,40 @@ pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Star> {
         ..bytemuck::Zeroable::zeroed()
     }];
 
-    for (i, (r, phi, color)) in disk.into_iter().enumerate() {
-        let l = luminosity(&mut rng);
-        let m_enclosed = config.core_mass + config.star_mass * i as f32;
+    let orbit = |r: f32, phi: f32, disk_inside: usize| {
+        let clusters_inside = cluster_radii.partition_point(|&x| x < r);
+        let m_enclosed = config.core_mass
+            + config.star_mass * disk_inside as f32
+            + config.cluster_mass * clusters_inside as f32;
         let softened = (r * r + EPS * EPS).powf(1.5);
         let v = -(G * m_enclosed * r * r / softened).sqrt();
+        (
+            [cx + r * phi.cos(), cy + r * phi.sin()],
+            [vx - phi.sin() * v, vy + phi.cos() * v],
+        )
+    };
 
+    for (i, &(r, phi, color)) in disk.iter().enumerate() {
+        let (pos, vel) = orbit(r, phi, i);
+        let l = luminosity(&mut rng);
         stars.push(Star {
-            pos: [cx + r * phi.cos(), cy + r * phi.sin()],
-            vel: [vx - phi.sin() * v, vy + phi.cos() * v],
+            pos,
+            vel,
             mass: config.star_mass,
             radius: config.star_radius * l.max(1.0).powf(LUMINOSITY_SIZE),
             color: color.map(|c| c * l),
+            ..bytemuck::Zeroable::zeroed()
+        });
+    }
+
+    for &(r, phi) in &clusters {
+        let (pos, vel) = orbit(r, phi, disk.partition_point(|d| d.0 < r));
+        stars.push(Star {
+            pos,
+            vel,
+            mass: config.cluster_mass,
+            radius: CLUSTER_RADIUS,
+            color: CLUSTER_COLOR,
             ..bytemuck::Zeroable::zeroed()
         });
     }

@@ -297,6 +297,8 @@ mod tests {
             star_radius: 1.5,
             gap: 20.0,
             arms: 2,
+            clusters: 0,
+            cluster_mass: 0.0,
         });
         let mut pm = ParticleMesh::new_fft(stars.clone(), 511, 1.25);
         let mut direct = CpuDirect::new(stars.clone());

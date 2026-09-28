@@ -6,7 +6,7 @@ pub const STRATEGY: Strategy = Strategy::GpuParticleMeshFft { size: 1023, h: 5.0
 // pub const STRATEGY: Strategy = Strategy::GpuDirect;
 
 pub const G: f32 = 100.0;
-pub const EPS: f32 = 20.0;
+pub const EPS: f32 = 80.0;
 pub const TIME_SCALE: f32 = 0.5;
 
 pub const GALAXIES: &[GalaxyConfig] = &[
@@ -21,6 +21,8 @@ pub const GALAXIES: &[GalaxyConfig] = &[
         star_radius: 0.5,
         gap: 20.0,
         arms: 5,
+        clusters: 100,
+        cluster_mass: 5000.0,
     },
 ];
 
@@ -44,6 +46,9 @@ pub const HII_COLOR: [f32; 3] = [0.6, 0.08, 0.25];
 pub const LUMINOSITY_POWER: f32 = 2.5;
 pub const LUMINOSITY_MAX: f32 = 30.0;
 pub const LUMINOSITY_SIZE: f32 = 0.5;
+
+pub const CLUSTER_RADIUS: f32 = 3.0;
+pub const CLUSTER_COLOR: [f32; 3] = [2.0, 2.0, 2.0];
 
 pub const VIEW_RADIUS: f32 = 800.0;
 pub const ZOOM_STEP: f32 = 0.9;
