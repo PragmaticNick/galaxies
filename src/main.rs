@@ -22,7 +22,7 @@ mod renderer;
 mod simulation;
 mod star;
 
-const STRATEGY: Strategy = Strategy::GpuParticleMeshFft { size: 127, h: 10.0 };
+const STRATEGY: Strategy = Strategy::GpuParticleMeshFft { size: 511, h: 5.0 };
 // const STRATEGY: Strategy = Strategy::ParticleMesh { size: 128, h: 10.0 };
 // const STRATEGY: Strategy = Strategy::GpuDirect;
 
@@ -35,13 +35,13 @@ const TIME_SCALE: f32 = 0.1;
 const GALAXY: GalaxyConfig = GalaxyConfig {
     center: [0.0, 0.0],
     radius: 400.0,
-    star_count: 50000,
+    star_count: 2000000,
     core_radius: 2.0,
     core_mass: 500000.0,
-    star_mass: 10.0,
+    star_mass: 0.25,
     star_radius: 1.5,
     gap: 20.0,
-    arms: 2,
+    arms: 5,
 };
 
 /// Lower-left corner of a PM grid centered on the galaxy.
