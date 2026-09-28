@@ -1,10 +1,12 @@
 use crate::config::{
-    EXPOSURE, GLOW_SIZE, GLOW_STRENGTH, GRID_BRIGHTNESS, GRID_CELL_BRIGHTNESS, MIN_RADIUS_PX,
+    BLOOM_STRENGTH, EXPOSURE, GLOW_SIZE, GLOW_STRENGTH, GRID_BRIGHTNESS, GRID_CELL_BRIGHTNESS, MIN_RADIUS_PX,
     SHOW_OVERLAY,
 };
 use crate::gpu::{GpuContext, clear_pass};
+use crate::renderer::bloom::Bloom;
 use crate::renderer::overlay::TextOverlay;
 
+mod bloom;
 mod overlay;
 
 const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
@@ -13,7 +15,8 @@ pub struct Renderer {
     pipeline: wgpu::RenderPipeline,
     tonemap: wgpu::RenderPipeline,
     hdr_view: wgpu::TextureView,
-    hdr_bind_group: wgpu::BindGroup,
+    bloom: Bloom,
+    tonemap_bind_group: wgpu::BindGroup,
     grid: Option<(wgpu::RenderPipeline, wgpu::BindGroup)>,
     view_radius: f32,
     center: [f32; 2],
@@ -58,9 +61,11 @@ impl Renderer {
             gpu.config.format,
             wgpu::BlendState::REPLACE,
             wgpu::PrimitiveTopology::TriangleList,
-            &[("EXPOSURE", EXPOSURE as f64)],
+            &[("EXPOSURE", EXPOSURE as f64), ("BLOOM_STRENGTH", BLOOM_STRENGTH as f64)],
         );
-        let (hdr_view, hdr_bind_group) = hdr_target(gpu, &tonemap);
+        let hdr_view = hdr_texture(gpu);
+        let bloom = Bloom::new(gpu, HDR_FORMAT, &hdr_view);
+        let tonemap_bind_group = tonemap_bind_group(gpu, &tonemap, &hdr_view, &bloom);
 
         let view_buffer = gpu.uniform_buffer(&[0.0f32; 8]);
         let layout = |group| pipeline.get_bind_group_layout(group);
@@ -90,7 +95,8 @@ impl Renderer {
             pipeline,
             tonemap,
             hdr_view,
-            hdr_bind_group,
+            bloom,
+            tonemap_bind_group,
             grid,
             view_radius,
             center: [0.0, 0.0],
@@ -105,7 +111,9 @@ impl Renderer {
     }
 
     pub fn resize(&mut self, gpu: &GpuContext) {
-        (self.hdr_view, self.hdr_bind_group) = hdr_target(gpu, &self.tonemap);
+        self.hdr_view = hdr_texture(gpu);
+        self.bloom.resize(gpu, HDR_FORMAT, &self.hdr_view);
+        self.tonemap_bind_group = tonemap_bind_group(gpu, &self.tonemap, &self.hdr_view, &self.bloom);
         self.update_view(gpu);
     }
 
@@ -167,9 +175,11 @@ impl Renderer {
         }
         drop(pass);
 
+        self.bloom.draw(encoder);
+
         let mut pass = clear_pass(encoder, view, wgpu::Color::BLACK);
         pass.set_pipeline(&self.tonemap);
-        pass.set_bind_group(0, &self.hdr_bind_group, &[]);
+        pass.set_bind_group(0, &self.tonemap_bind_group, &[]);
         pass.draw(0..3, 0..1);
 
         if SHOW_OVERLAY {
@@ -178,7 +188,7 @@ impl Renderer {
     }
 }
 
-fn hdr_target(gpu: &GpuContext, tonemap: &wgpu::RenderPipeline) -> (wgpu::TextureView, wgpu::BindGroup) {
+fn hdr_texture(gpu: &GpuContext) -> wgpu::TextureView {
     let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
         label: None,
         size: wgpu::Extent3d {
@@ -193,16 +203,33 @@ fn hdr_target(gpu: &GpuContext, tonemap: &wgpu::RenderPipeline) -> (wgpu::Textur
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     });
-    let view = texture.create_view(&Default::default());
-    let bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+    texture.create_view(&Default::default())
+}
+
+fn tonemap_bind_group(
+    gpu: &GpuContext,
+    tonemap: &wgpu::RenderPipeline,
+    hdr: &wgpu::TextureView,
+    bloom: &Bloom,
+) -> wgpu::BindGroup {
+    gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,
         layout: &tonemap.get_bind_group_layout(0),
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::TextureView(&view),
-        }],
-    });
-    (view, bind_group)
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(hdr),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(bloom.output()),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::Sampler(&bloom.sampler),
+            },
+        ],
+    })
 }
 
 fn additive_blend() -> wgpu::BlendState {
