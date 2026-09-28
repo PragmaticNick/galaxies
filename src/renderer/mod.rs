@@ -1,4 +1,7 @@
-use crate::config::{EXPOSURE, GLOW_SIZE, GLOW_STRENGTH, GRID_BRIGHTNESS, MIN_RADIUS_PX};
+use crate::config::{
+    EXPOSURE, GLOW_SIZE, GLOW_STRENGTH, GRID_BRIGHTNESS, GRID_CELL_BRIGHTNESS, MIN_RADIUS_PX,
+    SHOW_OVERLAY,
+};
 use crate::gpu::{GpuContext, clear_pass};
 use crate::renderer::overlay::TextOverlay;
 
@@ -15,6 +18,7 @@ pub struct Renderer {
     view_radius: f32,
     center: [f32; 2],
     grid_half: f32,
+    grid_cells: u32,
     view_buffer: wgpu::Buffer,
     view_bind_group: wgpu::BindGroup,
     star_bind_group: wgpu::BindGroup,
@@ -28,7 +32,7 @@ impl Renderer {
         stars: &wgpu::Buffer,
         star_count: usize,
         view_radius: f32,
-        grid_half: Option<f32>,
+        grid: Option<(i32, f32)>,
         strategy_name: &str,
     ) -> Self {
         let shader = gpu
@@ -61,7 +65,8 @@ impl Renderer {
         let view_buffer = gpu.uniform_buffer(&[0.0f32; 8]);
         let layout = |group| pipeline.get_bind_group_layout(group);
 
-        let grid = grid_half.map(|_| {
+        let (grid_cells, grid_half) = grid.map_or((0, 0.0), |(size, h)| (size as u32, size as f32 * h / 2.0));
+        let grid = grid.map(|_| {
             let shader = gpu
                 .device
                 .create_shader_module(wgpu::include_wgsl!("grid.wgsl"));
@@ -70,7 +75,10 @@ impl Renderer {
                 HDR_FORMAT,
                 additive_blend(),
                 wgpu::PrimitiveTopology::LineList,
-                &[("GRID_BRIGHTNESS", GRID_BRIGHTNESS as f64)],
+                &[
+                    ("GRID_BRIGHTNESS", GRID_BRIGHTNESS as f64),
+                    ("GRID_CELL_BRIGHTNESS", GRID_CELL_BRIGHTNESS as f64),
+                ],
             );
             let bind_group = gpu.bind_group(&pipeline.get_bind_group_layout(0), &[&view_buffer]);
             (pipeline, bind_group)
@@ -86,7 +94,8 @@ impl Renderer {
             grid,
             view_radius,
             center: [0.0, 0.0],
-            grid_half: grid_half.unwrap_or(0.0),
+            grid_half,
+            grid_cells,
             view_buffer,
             star_count: star_count as u32,
             overlay: TextOverlay::new(gpu, star_count, strategy_name),
@@ -104,7 +113,7 @@ impl Renderer {
         let aspect = gpu.config.width as f32 / gpu.config.height as f32;
         let r = self.view_radius;
         let [cx, cy] = self.center;
-        gpu.write(&self.view_buffer, &[1.0 / (r * aspect), 1.0 / r, cx, cy, self.grid_half, self.world_per_pixel(gpu), 0.0, 0.0]);
+        gpu.write(&self.view_buffer, &[1.0 / (r * aspect), 1.0 / r, cx, cy, self.grid_half, self.world_per_pixel(gpu), self.grid_cells as f32, 0.0]);
     }
 
     pub fn pan(&mut self, gpu: &GpuContext, dx: f32, dy: f32) {
@@ -141,7 +150,9 @@ impl Renderer {
         encoder: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
     ) {
-        self.overlay.prepare(gpu);
+        if SHOW_OVERLAY {
+            self.overlay.prepare(gpu);
+        }
 
         let mut pass = clear_pass(encoder, &self.hdr_view, wgpu::Color::BLACK);
         pass.set_pipeline(&self.pipeline);
@@ -152,7 +163,7 @@ impl Renderer {
         if let Some((pipeline, bind_group)) = &self.grid {
             pass.set_pipeline(pipeline);
             pass.set_bind_group(0, bind_group, &[]);
-            pass.draw(0..8, 0..1);
+            pass.draw(0..4 * (self.grid_cells + 1), 0..1);
         }
         drop(pass);
 
@@ -161,7 +172,9 @@ impl Renderer {
         pass.set_bind_group(0, &self.hdr_bind_group, &[]);
         pass.draw(0..3, 0..1);
 
-        self.overlay.draw(&mut pass);
+        if SHOW_OVERLAY {
+            self.overlay.draw(&mut pass);
+        }
     }
 }
 

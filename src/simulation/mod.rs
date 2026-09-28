@@ -45,11 +45,11 @@ impl Strategy {
         }
     }
 
-    pub fn grid_half(self) -> Option<f32> {
+    pub fn grid(self) -> Option<(i32, f32)> {
         match self {
             Strategy::ParticleMesh { size, h }
             | Strategy::ParticleMeshFft { size, h }
-            | Strategy::GpuParticleMeshFft { size, h } => Some(size as f32 * h / 2.0),
+            | Strategy::GpuParticleMeshFft { size, h } => Some((size, h)),
             _ => None,
         }
     }

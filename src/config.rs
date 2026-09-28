@@ -60,4 +60,7 @@ pub const MIN_RADIUS_PX: f32 = 1.0;
 pub const GLOW_SIZE: f32 = 3.0;
 pub const GLOW_STRENGTH: f32 = 0.3;
 pub const EXPOSURE: f32 = 0.4;
+pub const SHOW_OVERLAY: bool = false;
+pub const SHOW_GRID: bool = false;
 pub const GRID_BRIGHTNESS: f32 = 0.3;
+pub const GRID_CELL_BRIGHTNESS: f32 = 0.05;

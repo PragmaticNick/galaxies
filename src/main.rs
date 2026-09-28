@@ -9,7 +9,7 @@ use winit::{
     window::{Fullscreen, Window, WindowId},
 };
 
-use crate::config::{GALAXIES, STRATEGY, TIME_SCALE, VIEW_RADIUS, ZOOM_STEP};
+use crate::config::{GALAXIES, SHOW_GRID, STRATEGY, TIME_SCALE, VIEW_RADIUS, ZOOM_STEP};
 use crate::galaxy::generate_galaxy;
 use crate::gpu::GpuContext;
 use crate::renderer::Renderer;
@@ -43,7 +43,7 @@ impl Engine {
             &star_buffer,
             stars.len(),
             VIEW_RADIUS,
-            STRATEGY.grid_half(),
+            STRATEGY.grid().filter(|_| SHOW_GRID),
             STRATEGY.name(),
         );
         let simulation: Box<dyn Simulation> = match STRATEGY {
