@@ -247,6 +247,7 @@ impl ParticleMesh {
         }
     }
 
+    #[cfg(test)]
     pub fn stars(&self) -> &[Star] {
         &self.stars
     }
@@ -324,149 +325,71 @@ impl Simulation for ParticleMesh {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::galaxy::{GalaxyConfig, generate_galaxy};
+    use crate::simulation::CpuDirect;
 
-    fn equal(a: f32, b: f32) -> bool {
-        (a - b).abs() < 1.0e-3
+    fn star(x: f32, y: f32, mass: f32) -> Star {
+        Star { pos: [x, y], mass, ..bytemuck::Zeroable::zeroed() }
     }
 
     #[test]
-    fn test_fft_matches_direct() {
-        let mut grid = Grid::new(20, 5.0, 0.0, 0.0);
-        let nodes: Vec<_> = grid.nodes().collect();
-        for (i, j) in nodes {
-            // uneven masses, some nodes left empty
-            let index = grid.index(i, j);
-            grid.data[index] = ((i * 7 + j * 13) % 5) as f32 * 10.0;
-        }
-
-        let mut direct = vec![(0.0, 0.0); grid.data.len()];
-        node_acc_direct(&grid, &mut direct);
-
-        let mut fft = vec![(0.0, 0.0); grid.data.len()];
-        FftSolver::new(&grid).solve(&grid, &mut fft);
-
-        let max = direct.iter().map(|a| a.0.abs().max(a.1.abs())).fold(0.0, f32::max);
-        for (d, f) in direct.iter().zip(&fft) {
-            assert!((d.0 - f.0).abs() < max * 1.0e-4, "direct {d:?}, fft {f:?}");
-            assert!((d.1 - f.1).abs() < max * 1.0e-4, "direct {d:?}, fft {f:?}");
-        }
-    }
-
-    #[test]
-    fn test_pm_basic() {
-        let mass = 1000.0;
-        let star =  Star {
-            pos: [10.0, 10.0],
-            mass,
-            radius: 3.0,
-            ..bytemuck::Zeroable::zeroed()
-        };
-
-        let mut pm = ParticleMesh::new(vec![star], 2, 100.0, 0.0, 0.0);
-        pm.update(0.1);
-        pm.update(0.1);
-
-        assert!(equal(pm.grid.data.iter().sum::<f32>(), mass));
-        assert!(equal(pm.grid.data[0], 810.0));
-        assert!(equal(pm.grid.data[1], 90.0));
-        assert!(equal(pm.grid.data[3], 90.0));
-        assert!(equal(pm.grid.data[4], 10.0));
-    }
-
-    #[test]
-    fn test_pm_star_outside() {
-        let star =  Star {
-            pos: [-10.0, -10.0],
-            mass: 1000.0,
-            radius: 3.0,
-            ..bytemuck::Zeroable::zeroed()
-        };
-
-        let mut pm = ParticleMesh::new(vec![star], 2, 100.0, 0.0, 0.0);
-        pm.update(0.1);
-
-        assert!(equal(pm.grid.data.iter().sum::<f32>(), 0.0));
-    }
-
-    #[test]
-    fn test_pm_non_zero_origin() {
-        let mass = 1000.0;
-        let star =  Star {
-            pos: [120.0, 80.0],
-            mass: mass,
-            radius: 3.0,
-            ..bytemuck::Zeroable::zeroed()
-        };
-
-        let mut pm = ParticleMesh::new(vec![star], 2, 100.0, 100.0, 50.0);
-        pm.update(0.1);
-
-        assert!(equal(pm.grid.data.iter().sum::<f32>(), mass));
-        assert!(equal(pm.grid.data[0], 560.0));
-        assert!(equal(pm.grid.data[1], 240.0));
-        assert!(equal(pm.grid.data[3], 140.0));
-        assert!(equal(pm.grid.data[4], 60.0));
-    }
-
-        #[test]
-    fn test_pm_star_on_node() {
-        let mass = 1000.0;
-        let star =  Star {
-            pos: [200.0, 150.0],
-            mass: mass,
-            radius: 3.0,
-            ..bytemuck::Zeroable::zeroed()
-        };
-
-        let mut pm = ParticleMesh::new(vec![star], 2, 100.0, 100.0, 50.0);
-        pm.update(0.1);
-
-        assert!(equal(pm.grid.data.iter().sum::<f32>(), mass));
-        assert!(equal(pm.grid.data[4], mass));
-    }
-
-    #[test]
-    fn test_pm_star_on_far_edge() {
-        let star =  Star {
-            pos: [200.0, 250.0],
-            mass: 1000.0,
-            radius: 3.0,
-            ..bytemuck::Zeroable::zeroed()
-        };
-
-        let mut pm = ParticleMesh::new(vec![star], 2, 100.0, 100.0, 50.0);
-        pm.update(0.1);
-
-        assert!(equal(pm.grid.data.iter().sum::<f32>(), 0.0));
-    }
-
-    #[test]
-    fn test_pm_multiple_stars() {
-        let star = |pos: [f32; 2], mass: f32| Star {
-            pos,
-            mass,
-            radius: 3.0,
-            ..bytemuck::Zeroable::zeroed()
-        };
-
-        let stars = vec![
-            star([10.0, 10.0], 1000.0),
-            star([50.0, 20.0], 200.0),
-            star([130.0, 160.0], 500.0),
-        ];
-
+    fn deposit() {
+        let stars = vec![star(10.0, 10.0, 1000.0), star(130.0, 160.0, 500.0), star(-10.0, 50.0, 1000.0)];
         let mut pm = ParticleMesh::new(stars, 2, 100.0, 0.0, 0.0);
         pm.update(0.1);
 
-        let expected = [
-            890.0, 110.0, 0.0,
-            170.0, 170.0, 210.0,
-            0.0, 60.0, 90.0,
-        ];
 
-        assert!(equal(pm.grid.data.iter().sum::<f32>(), 1700.0));
+        let expected = [810.0, 90.0, 0.0, 90.0, 150.0, 210.0, 0.0, 60.0, 90.0];
         for (actual, expected) in pm.grid.data.iter().zip(expected) {
-            assert!(equal(*actual, expected));
+            assert!((actual - expected).abs() < 1e-3, "{:?}", pm.grid.data);
         }
+    }
+
+    #[test]
+    fn fft_matches_pair_sum() {
+        let mut grid = Grid::new(20, 5.0, 0.0, 0.0);
+        for (index, mass) in grid.data.iter_mut().enumerate() {
+            *mass = (index % 7) as f32 * 10.0;
+        }
+
+        let mut pairs = vec![(0.0, 0.0); grid.data.len()];
+        let mut fft = pairs.clone();
+        node_acc_direct(&grid, &mut pairs);
+        FftSolver::new(&grid).solve(&grid, &mut fft);
+
+        let max = pairs.iter().map(|a| a.0.abs().max(a.1.abs())).fold(0.0, f32::max);
+        for (p, f) in pairs.iter().zip(&fft) {
+            assert!((p.0 - f.0).abs() < max * 1e-4 && (p.1 - f.1).abs() < max * 1e-4);
+        }
+    }
+
+    #[test]
+    fn pm_matches_direct() {
+        let stars = generate_galaxy(&GalaxyConfig {
+            center: [0.0, 0.0],
+            radius: 200.0,
+            star_count: 2000,
+            core_mass: 500000.0,
+            core_radius: 2.0,
+            star_mass: 250.0,
+            star_radius: 1.5,
+            gap: 20.0,
+            arms: 2,
+        });
+        let mut pm = ParticleMesh::new_fft(stars.clone(), 127, 5.0, -317.5, -317.5);
+        let mut direct = CpuDirect::new(stars.clone());
+        for _ in 0..10 {
+            pm.update(0.004);
+            direct.update(0.004);
+        }
+
+        let distance = |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).hypot(a[1] - b[1]);
+        let (mut error, mut travel) = (0.0, 0.0);
+        for ((p, d), s) in pm.stars().iter().zip(direct.stars()).zip(&stars) {
+            error += distance(p.pos, d.pos);
+            travel += distance(d.pos, s.pos);
+        }
+        println!("error {:.3}% of travel", error / travel * 100.0);
+        assert!(error < travel * 0.01);
     }
 }

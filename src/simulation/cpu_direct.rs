@@ -13,6 +13,7 @@ impl CpuDirect {
         Self { stars }
     }
 
+    #[cfg(test)]
     pub fn stars(&self) -> &[Star] {
         &self.stars
     }

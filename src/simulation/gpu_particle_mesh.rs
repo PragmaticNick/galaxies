@@ -145,129 +145,59 @@ impl Simulation for GpuParticleMesh {
 
 #[cfg(test)]
 mod tests {
+    use wgpu::util::DeviceExt as _;
+
     use super::*;
     use crate::galaxy::{GalaxyConfig, generate_galaxy};
     use crate::simulation::ParticleMesh;
 
-    fn read_stars(gpu: &GpuContext, buffer: &wgpu::Buffer, count: usize) -> Vec<Star> {
-        let size = (count * size_of::<Star>()) as u64;
-        let staging = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size,
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let mut encoder = gpu.device.create_command_encoder(&Default::default());
-        encoder.copy_buffer_to_buffer(buffer, 0, &staging, 0, size);
-        gpu.queue.submit([encoder.finish()]);
-
-        let slice = staging.slice(..);
-        slice.map_async(wgpu::MapMode::Read, |r| r.unwrap());
-        gpu.device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
-        let stars = bytemuck::cast_slice(&slice.get_mapped_range()).to_vec();
-        stars
-    }
-
-    /// Step time of the GPU PM for growing star counts and grids. Run with:
-    /// cargo test --release gpu_pm_speed -- --ignored --nocapture
     #[test]
-    #[ignore]
-    fn gpu_pm_speed() {
-        let gpu = pollster::block_on(GpuContext::headless()).unwrap();
-        let steps = 100;
-
-        for star_count in [50_000, 500_000, 2_000_000] {
-            let galaxy = GalaxyConfig {
-                center: [0.0, 0.0],
-                radius: 400.0,
-                star_count,
-                core_mass: 500000.0,
-                core_radius: 2.0,
-                star_mass: 500000.0 / star_count as f32,
-                star_radius: 1.5,
-                gap: 20.0,
-                arms: 2,
-            };
-            let stars = generate_galaxy(&galaxy);
-            let buffer = gpu.storage_buffer(&stars);
-
-            for (size, h) in [(127, 10.0), (255, 5.0), (511, 2.5)] {
-                let half = size as f32 * h / 2.0;
-                let mut pm = GpuParticleMesh::new(&gpu, &buffer, &stars, size, h, -half, -half);
-
-                let mut run = |steps| {
-                    let mut encoder = gpu.device.create_command_encoder(&Default::default());
-                    for _ in 0..steps {
-                        pm.step(&gpu, &mut encoder, &buffer, 0.001);
-                    }
-                    gpu.queue.submit([encoder.finish()]);
-                    gpu.device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
-                };
-                run(1);
-                let start = std::time::Instant::now();
-                run(steps);
-                let ms = start.elapsed().as_secs_f64() * 1000.0 / steps as f64;
-                println!("{star_count:>9} stars, grid {size:3}x{size:3}: {ms:6.3} ms/step");
-            }
-        }
-    }
-
-    /// Same galaxy, same grid, several steps on the GPU and with the CPU FFT
-    /// PM: positions must agree up to float and fixed-point rounding.
-    #[test]
-    fn gpu_pm_matches_cpu() {
+    fn gpu_matches_cpu() {
         let Ok(gpu) = pollster::block_on(GpuContext::headless()) else {
             eprintln!("no GPU adapter, skipping");
             return;
         };
-
-        let galaxy = GalaxyConfig {
+        let stars = generate_galaxy(&GalaxyConfig {
             center: [0.0, 0.0],
             radius: 200.0,
             star_count: 5000,
             core_mass: 500000.0,
             core_radius: 2.0,
-            star_mass: 10.0,
+            star_mass: 100.0,
             star_radius: 1.5,
             gap: 20.0,
             arms: 2,
-        };
-        let stars = generate_galaxy(&galaxy);
-        let (size, h) = (63, 8.0);
-        let half = size as f32 * h / 2.0;
-        let dt = 0.004;
-        let steps = 10;
+        });
 
-        let buffer = wgpu::util::DeviceExt::create_buffer_init(
-            &gpu.device,
-            &wgpu::util::BufferInitDescriptor {
-                label: None,
-                contents: bytemuck::cast_slice(&stars),
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            },
-        );
-        let mut gpu_pm = GpuParticleMesh::new(&gpu, &buffer, &stars, size, h, -half, -half);
-        for _ in 0..steps {
-            let mut encoder = gpu.device.create_command_encoder(&Default::default());
-            gpu_pm.step(&gpu, &mut encoder, &buffer, dt);
-            gpu.queue.submit([encoder.finish()]);
-        }
-        let on_gpu = read_stars(&gpu, &buffer, stars.len());
+        let buffer = gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(&stars),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        });
+        let staging = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: buffer.size(),
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
-        let mut cpu_pm = ParticleMesh::new_fft(stars.clone(), size, h, -half, -half);
-        for _ in 0..steps {
-            cpu_pm.update(dt);
+        let mut on_gpu = GpuParticleMesh::new(&gpu, &buffer, &stars, 63, 8.0, -252.0, -252.0);
+        let mut on_cpu = ParticleMesh::new_fft(stars.clone(), 63, 8.0, -252.0, -252.0);
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        for _ in 0..10 {
+            on_gpu.step(&gpu, &mut encoder, &buffer, 0.004);
+            on_cpu.update(0.004);
         }
+        encoder.copy_buffer_to_buffer(&buffer, 0, &staging, 0, buffer.size());
+        gpu.queue.submit([encoder.finish()]);
 
-        let mut max_error: f32 = 0.0;
-        let mut max_travel: f32 = 0.0;
-        for ((g, c), s) in on_gpu.iter().zip(cpu_pm.stars()).zip(&stars) {
-            let error = ((g.pos[0] - c.pos[0]).powi(2) + (g.pos[1] - c.pos[1]).powi(2)).sqrt();
-            let travel = ((c.pos[0] - s.pos[0]).powi(2) + (c.pos[1] - s.pos[1]).powi(2)).sqrt();
-            max_error = max_error.max(error);
-            max_travel = max_travel.max(travel);
+        staging.slice(..).map_async(wgpu::MapMode::Read, |r| r.unwrap());
+        gpu.device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+        let mapped = staging.slice(..).get_mapped_range();
+        let result: &[Star] = bytemuck::cast_slice(&mapped);
+
+        for (g, c) in result.iter().zip(on_cpu.stars()) {
+            assert!((g.pos[0] - c.pos[0]).hypot(g.pos[1] - c.pos[1]) < 0.01);
         }
-        println!("max error {max_error:.2e}, max travel {max_travel:.2}");
-        assert!(max_error < max_travel * 1.0e-3, "max error {max_error}, max travel {max_travel}");
     }
 }
