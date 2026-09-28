@@ -1,4 +1,7 @@
+use rayon::prelude::*;
+
 use crate::gpu::GpuContext;
+use crate::star::Star;
 
 mod cpu_direct;
 mod gpu_direct;
@@ -42,6 +45,13 @@ impl Strategy {
             Strategy::GpuParticleMeshFft { .. } => "gpu particle mesh fft",
         }
     }
+}
+
+pub fn drift_half(stars: &mut [Star], dt: f32) {
+    stars.par_iter_mut().skip(1).for_each(|s| {
+        s.pos[0] += 0.5 * s.vel[0] * dt;
+        s.pos[1] += 0.5 * s.vel[1] * dt;
+    });
 }
 
 pub trait Simulation {

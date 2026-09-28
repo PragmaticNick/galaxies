@@ -20,19 +20,12 @@ struct SimParams {
 @group(0) @binding(1) var<uniform> sim: SimParams;
 
 @compute @workgroup_size(WORKGROUP_SIZE)
-fn drift_half(
-    @builtin(global_invocation_id) gid: vec3<u32>,
-    @builtin(num_workgroups) num_wg: vec3<u32>,
-) {
-    let index = gid.x;
-    let stride = num_wg.x * WORKGROUP_SIZE;
-    let total = arrayLength(&stars);
-    let dt = sim.dt;
-    for (var i: u32 = index; i < total; i += stride) {
-        if i == 0u { continue; }
-
-        stars[i].pos += 0.5 * stars[i].vel * dt;
+fn drift_half(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if i == 0u || i >= arrayLength(&stars) {
+        return;
     }
+    stars[i].pos += 0.5 * stars[i].vel * sim.dt;
 }
 
 var<workgroup> tile_memory: array<vec4<f32>, WORKGROUP_SIZE>;
@@ -84,17 +77,12 @@ fn kick(
 }
 
 @compute @workgroup_size(WORKGROUP_SIZE)
-fn commit(
-    @builtin(global_invocation_id) gid: vec3<u32>,
-    @builtin(num_workgroups) num_wg: vec3<u32>,
-) {
-    let index = gid.x;
-    let stride = num_wg.x * WORKGROUP_SIZE;
-    let total = arrayLength(&stars);
-    for (var i: u32 = index; i < total; i += stride) {
-        if i == 0u { continue; }
-        stars[i].pos = stars[i]._pad;
+fn commit(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if i == 0u || i >= arrayLength(&stars) {
+        return;
     }
+    stars[i].pos = stars[i]._pad;
 }
 
 fn gravity_accel(pos_a: vec2<f32>,  pos_b: vec2<f32>, mass_b: f32) -> vec2<f32> {

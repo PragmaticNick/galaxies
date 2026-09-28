@@ -7,13 +7,7 @@ use crate::simulation::particle_mesh::fft_kernel;
 use crate::star::Star;
 
 const WORKGROUP_SIZE: usize = 256;
-
-/// Must match MAX_P in the shader: one FFT line has to fit in shared memory.
 const MAX_P: usize = 1024;
-
-/// Node masses are summed with integer atomics (WGSL has no float ones), in
-/// fixed point. The scale puts the whole galaxy's mass at 2^30, so no node
-/// can overflow an i32.
 const FIXED_POINT_TOTAL: f32 = (1u32 << 30) as f32;
 
 #[repr(C)]
@@ -28,44 +22,26 @@ struct Params {
     mass_scale: f32,
 }
 
-/// Particle mesh with the FFT node solver, all on the GPU. Same algorithm as
-/// `ParticleMesh::new_fft`.
 pub struct GpuParticleMesh {
     params: Params,
     params_buffer: wgpu::Buffer,
     mass_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
-    star_workgroups: u32,
-    field_workgroups: u32,
-    drift_deposit: wgpu::ComputePipeline,
-    load: wgpu::ComputePipeline,
-    fft_rows_forward: wgpu::ComputePipeline,
-    fft_cols_forward: wgpu::ComputePipeline,
-    multiply: wgpu::ComputePipeline,
-    fft_rows_inverse: wgpu::ComputePipeline,
-    fft_cols_inverse: wgpu::ComputePipeline,
-    kick_drift: wgpu::ComputePipeline,
+    passes: Vec<(wgpu::ComputePipeline, u32)>,
 }
 
 impl GpuParticleMesh {
-    pub fn new(
-        gpu: &GpuContext,
-        buffer: &wgpu::Buffer,
-        stars: &[Star],
-        size: i32,
-        h: f32,
-        x0: f32,
-        y0: f32,
-    ) -> Self {
+    pub fn new(gpu: &GpuContext, buffer: &wgpu::Buffer, stars: &[Star], size: i32, h: f32) -> Self {
         let (p, kernel) = fft_kernel(size, h);
         assert!(p <= MAX_P, "grid {size} needs FFT side {p}, max is {MAX_P}");
 
         let n = (size + 1) as usize;
+        let half = size as f32 * h / 2.0;
         let total_mass: f32 = stars.iter().map(|s| s.mass).sum();
         let params = Params {
             dt: 0.0,
             h,
-            origin: [x0, y0],
+            origin: [-half, -half],
             size: size as u32,
             p: p as u32,
             log_p: p.trailing_zeros(),
@@ -73,7 +49,6 @@ impl GpuParticleMesh {
         };
 
         let kernel: Vec<[f32; 2]> = kernel.iter().map(|k| [k.re, k.im]).collect();
-
         let params_buffer = gpu.uniform_buffer(&[params]);
         let mass_buffer = gpu.storage_buffer(&vec![0i32; n * n]);
         let field_buffer = gpu.storage_buffer(&vec![[0.0f32; 2]; p * p]);
@@ -89,7 +64,22 @@ impl GpuParticleMesh {
             Storage { read_only: true },
             Uniform,
         ]);
-        let pipeline = |entry| gpu.compute_pipeline(&shader, &layout, entry);
+
+        let star_groups = stars.len().div_ceil(WORKGROUP_SIZE) as u32;
+        let field_groups = (p * p).div_ceil(WORKGROUP_SIZE) as u32;
+        let lines = p as u32;
+        let passes = [
+            ("drift_deposit", star_groups),
+            ("load", field_groups),
+            ("fft_rows_forward", lines),
+            ("fft_cols_forward", lines),
+            ("multiply", field_groups),
+            ("fft_rows_inverse", lines),
+            ("fft_cols_inverse", lines),
+            ("kick_drift", star_groups),
+        ]
+        .map(|(entry, groups)| (gpu.compute_pipeline(&shader, &layout, entry), groups))
+        .to_vec();
 
         Self {
             bind_group: gpu.bind_group(
@@ -99,16 +89,7 @@ impl GpuParticleMesh {
             params,
             params_buffer,
             mass_buffer,
-            star_workgroups: stars.len().div_ceil(WORKGROUP_SIZE) as u32,
-            field_workgroups: (p * p).div_ceil(WORKGROUP_SIZE) as u32,
-            drift_deposit: pipeline("drift_deposit"),
-            load: pipeline("load"),
-            fft_rows_forward: pipeline("fft_rows_forward"),
-            fft_cols_forward: pipeline("fft_cols_forward"),
-            multiply: pipeline("multiply"),
-            fft_rows_inverse: pipeline("fft_rows_inverse"),
-            fft_cols_inverse: pipeline("fft_cols_inverse"),
-            kick_drift: pipeline("kick_drift"),
+            passes,
         }
     }
 }
@@ -125,20 +106,8 @@ impl Simulation for GpuParticleMesh {
         gpu.write(&self.params_buffer, &[self.params]);
         encoder.clear_buffer(&self.mass_buffer, 0, None);
 
-        // one workgroup per FFT line
-        let lines = self.params.p;
-
-        for (pipeline, workgroups) in [
-            (&self.drift_deposit, self.star_workgroups),
-            (&self.load, self.field_workgroups),
-            (&self.fft_rows_forward, lines),
-            (&self.fft_cols_forward, lines),
-            (&self.multiply, self.field_workgroups),
-            (&self.fft_rows_inverse, lines),
-            (&self.fft_cols_inverse, lines),
-            (&self.kick_drift, self.star_workgroups),
-        ] {
-            dispatch(encoder, pipeline, &self.bind_group, workgroups);
+        for (pipeline, groups) in &self.passes {
+            dispatch(encoder, pipeline, &self.bind_group, *groups);
         }
     }
 }
@@ -181,8 +150,8 @@ mod tests {
             mapped_at_creation: false,
         });
 
-        let mut on_gpu = GpuParticleMesh::new(&gpu, &buffer, &stars, 63, 8.0, -252.0, -252.0);
-        let mut on_cpu = ParticleMesh::new_fft(stars.clone(), 63, 8.0, -252.0, -252.0);
+        let mut on_gpu = GpuParticleMesh::new(&gpu, &buffer, &stars, 63, 8.0);
+        let mut on_cpu = ParticleMesh::new_fft(stars.clone(), 63, 8.0);
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
         for _ in 0..10 {
             on_gpu.step(&gpu, &mut encoder, &buffer, 0.004);

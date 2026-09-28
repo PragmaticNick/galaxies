@@ -5,90 +5,47 @@ use rustfft::num_complex::Complex32;
 use rustfft::{Fft, FftPlanner};
 
 use crate::gpu::GpuContext;
-use crate::simulation::{EPS, G, Simulation};
+use crate::simulation::{EPS, G, Simulation, drift_half};
 use crate::star::Star;
 
-#[derive(Debug)]
-pub struct Grid {
+struct Grid {
     data: Vec<f32>,
     size: i32,
     h: f32,
-    x0: f32,
-    y0: f32,
 }
 
 impl Grid {
-    fn new (size: i32, h: f32, x0: f32, y0: f32) -> Self {
-        Self {
-            size,
-            h,
-            x0,
-            y0,
-            data: vec![0.0; ((size + 1) * (size + 1)) as usize]
+    fn new(size: i32, h: f32) -> Self {
+        let n = (size + 1) as usize;
+        Self { data: vec![0.0; n * n], size, h }
+    }
+
+    fn weights(&self, pos: [f32; 2]) -> Option<[(usize, f32); 4]> {
+        let half = self.size as f32 * self.h / 2.0;
+        let gx = (pos[0] + half) / self.h;
+        let gy = (pos[1] + half) / self.h;
+        let (i, j) = (gx.floor() as i32, gy.floor() as i32);
+        if i < 0 || j < 0 || i >= self.size || j >= self.size {
+            return None;
         }
-    }
-    fn cell(&self, x: f32, y: f32) -> (i32, i32, f32, f32, bool) {
-        let gx = (x - self.x0) / self.h;
-        let gy = (y - self.y0) / self.h;
 
-        let i = gx.floor() as i32;
-        let j = gy.floor() as i32;
-
-        let dx = gx - i as f32;
-        let dy = gy - j as f32;
-
-        let ok = i >= 0 && j >= 0 && i < self.size && j < self.size;
-
-        (i, j, dx, dy, ok)
-    }
-
-    fn nodes(&self) -> impl Iterator<Item = (i32, i32)> + use<> {
+        let (dx, dy) = (gx - i as f32, gy - j as f32);
         let n = self.size + 1;
-        (0..n).flat_map(move |i| (0..n).map(move |j| (i, j)))
-    }
-
-    fn node(&self, index: usize) -> (i32, i32) {
-        let n = (self.size + 1) as usize;
-        ((index / n) as i32, (index % n) as i32)
-    }
-
-    fn index(&self, i: i32, j: i32) -> usize {
-        (i * (self.size + 1) + j) as usize
-    }
-
-    fn add(&mut self, i: i32, j: i32, value: f32) {
-        let index = self.index(i, j);
-        self.data[index] += value;
+        let index = |i: i32, j: i32| (i * n + j) as usize;
+        Some([
+            (index(i, j), (1.0 - dx) * (1.0 - dy)),
+            (index(i, j + 1), (1.0 - dx) * dy),
+            (index(i + 1, j), dx * (1.0 - dy)),
+            (index(i + 1, j + 1), dx * dy),
+        ])
     }
 }
 
-/// Node accelerations as a convolution of the node masses with the softened
-/// gravity kernel, done through a 2D FFT. Gives the same result as summing
-/// over all node pairs, in O(M log M) instead of O(M²).
-struct FftSolver {
-    /// padded side length, at least 2n - 1 so the circular convolution of the
-    /// FFT doesn't wrap one edge of the grid onto the other
-    p: usize,
-    forward: Arc<dyn Fft<f32>>,
-    inverse: Arc<dyn Fft<f32>>,
-    /// FFT of kx + i·ky: both kernels packed into one complex array, so one
-    /// inverse FFT gives ax in the real part and ay in the imaginary part
-    kernel: Vec<Complex32>,
-    buffer: Vec<Complex32>,
-    transposed: Vec<Complex32>,
-}
-
-/// FFT of the node gravity kernel for a grid of `size` cells with spacing
-/// `h`, and its padded side length p (see `FftSolver::p`). Row index is the
-/// x offset, column index the y offset.
 pub(crate) fn fft_kernel(size: i32, h: f32) -> (usize, Vec<Complex32>) {
     let n = (size + 1) as usize;
     let p = (2 * n - 1).next_power_of_two();
 
     let mut kernel = vec![Complex32::ZERO; p * p];
-
-    // acc[t] = Σ m[s] · F(s - t), F = pull towards s. As a convolution
-    // over u = t - s the kernel is F(-u) = -F(u).
     let reach = n as i32 - 1;
     for ui in -reach..=reach {
         for uj in -reach..=reach {
@@ -110,18 +67,24 @@ pub(crate) fn fft_kernel(size: i32, h: f32) -> (usize, Vec<Complex32>) {
     (p, kernel)
 }
 
+struct FftSolver {
+    p: usize,
+    forward: Arc<dyn Fft<f32>>,
+    inverse: Arc<dyn Fft<f32>>,
+    kernel: Vec<Complex32>,
+    buffer: Vec<Complex32>,
+    transposed: Vec<Complex32>,
+}
+
 impl FftSolver {
     fn new(grid: &Grid) -> Self {
         let (p, kernel) = fft_kernel(grid.size, grid.h);
-
         let mut planner = FftPlanner::new();
-        let forward = planner.plan_fft_forward(p);
-        let inverse = planner.plan_fft_inverse(p);
 
         Self {
             p,
-            forward,
-            inverse,
+            forward: planner.plan_fft_forward(p),
+            inverse: planner.plan_fft_inverse(p),
             kernel,
             buffer: vec![Complex32::ZERO; p * p],
             transposed: vec![Complex32::ZERO; p * p],
@@ -133,14 +96,11 @@ impl FftSolver {
         let p = self.p;
 
         self.buffer.fill(Complex32::ZERO);
-        self.buffer
-            .par_chunks_mut(p)
-            .zip(grid.data.par_chunks(n))
-            .for_each(|(row, masses)| {
-                for (b, &m) in row.iter_mut().zip(masses) {
-                    *b = Complex32::new(m, 0.0);
-                }
-            });
+        for (row, masses) in self.buffer.chunks_mut(p).zip(grid.data.chunks(n)) {
+            for (b, &m) in row.iter_mut().zip(masses) {
+                *b = Complex32::new(m, 0.0);
+            }
+        }
 
         fft_2d(&self.forward, &mut self.buffer, &mut self.transposed, p);
         self.buffer
@@ -149,19 +109,15 @@ impl FftSolver {
             .for_each(|(b, k)| *b *= k);
         fft_2d(&self.inverse, &mut self.buffer, &mut self.transposed, p);
 
-        // rustfft doesn't normalize, forward + inverse scales by p² in total
         let scale = 1.0 / (p * p) as f32;
-        acc.par_chunks_mut(n)
-            .zip(self.buffer.par_chunks(p))
-            .for_each(|(acc_row, row)| {
-                for (a, b) in acc_row.iter_mut().zip(row) {
-                    *a = (b.re * scale, b.im * scale);
-                }
-            });
+        for (acc_row, row) in acc.chunks_mut(n).zip(self.buffer.chunks(p)) {
+            for (a, b) in acc_row.iter_mut().zip(row) {
+                *a = (b.re * scale, b.im * scale);
+            }
+        }
     }
 }
 
-/// 2D FFT in place: rows, transpose, rows again (former columns), transpose back.
 fn fft_2d(fft: &Arc<dyn Fft<f32>>, data: &mut [Complex32], transposed: &mut [Complex32], p: usize) {
     let rows = |data: &mut [Complex32]| {
         data.par_chunks_mut(p).for_each_init(
@@ -183,27 +139,18 @@ fn fft_2d(fft: &Arc<dyn Fft<f32>>, data: &mut [Complex32], transposed: &mut [Com
     transpose(transposed, data);
 }
 
-/// Node accelerations by summing over all node pairs, O(M²).
 fn node_acc_direct(grid: &Grid, acc: &mut [(f32, f32)]) {
-    let sources: Vec<(i32, i32, f32)> = grid
-        .nodes()
-        .zip(&grid.data)
-        .filter(|&(_, &mass)| mass != 0.0)
-        .map(|((i, j), &mass)| (i, j, mass))
-        .collect();
+    let n = grid.size + 1;
+    let node = |index: usize| (index as i32 / n, index as i32 % n);
 
     acc.par_iter_mut().enumerate().for_each(|(target, acc)| {
-        let (ti, tj) = grid.node(target);
+        let (ti, tj) = node(target);
         *acc = (0.0, 0.0);
 
-        for &(si, sj, mass) in &sources {
-            if si == ti && sj == tj {
-                continue;
-            }
-
+        for (source, &mass) in grid.data.iter().enumerate() {
+            let (si, sj) = node(source);
             let dx = (si - ti) as f32 * grid.h;
             let dy = (sj - tj) as f32 * grid.h;
-
             let r2 = dx * dx + dy * dy + EPS * EPS;
             let k = G * mass / (r2 * r2.sqrt());
             acc.0 += k * dx;
@@ -212,7 +159,6 @@ fn node_acc_direct(grid: &Grid, acc: &mut [(f32, f32)]) {
     });
 }
 
-/// How node accelerations are computed from node masses.
 enum NodeSolver {
     Direct,
     Fft(FftSolver),
@@ -226,25 +172,19 @@ pub struct ParticleMesh {
 }
 
 impl ParticleMesh {
-    pub fn new(stars: Vec<Star>, size: i32, h: f32, x0: f32, y0: f32) -> Self {
-        Self::with_solver(stars, Grid::new(size, h, x0, y0), |_| NodeSolver::Direct)
+    pub fn new(stars: Vec<Star>, size: i32, h: f32) -> Self {
+        Self::with_solver(stars, Grid::new(size, h), NodeSolver::Direct)
     }
 
-    pub fn new_fft(stars: Vec<Star>, size: i32, h: f32, x0: f32, y0: f32) -> Self {
-        Self::with_solver(stars, Grid::new(size, h, x0, y0), |grid| {
-            NodeSolver::Fft(FftSolver::new(grid))
-        })
+    pub fn new_fft(stars: Vec<Star>, size: i32, h: f32) -> Self {
+        let grid = Grid::new(size, h);
+        let solver = NodeSolver::Fft(FftSolver::new(&grid));
+        Self::with_solver(stars, grid, solver)
     }
 
-    fn with_solver(stars: Vec<Star>, grid: Grid, solver: impl FnOnce(&Grid) -> NodeSolver) -> Self {
+    fn with_solver(stars: Vec<Star>, grid: Grid, solver: NodeSolver) -> Self {
         let acc = vec![(0.0, 0.0); grid.data.len()];
-        let solver = solver(&grid);
-        Self {
-            stars,
-            grid,
-            acc,
-            solver,
-        }
+        Self { stars, grid, acc, solver }
     }
 
     #[cfg(test)]
@@ -253,24 +193,13 @@ impl ParticleMesh {
     }
 
     pub fn update(&mut self, dt: f32) {
-        self.stars.par_iter_mut().skip(1).for_each(|s| {
-            s.pos[0] += 0.5 * s.vel[0] * dt;
-            s.pos[1] += 0.5 * s.vel[1] * dt;
-        });
+        drift_half(&mut self.stars, dt);
 
         self.grid.data.fill(0.0);
-
-        for star in self.stars.iter() {
-            let (i, j, dx, dy, ok) = self.grid.cell(star.pos[0], star.pos[1]);
-
-            if !ok {
-                continue;
+        for star in &self.stars {
+            for (index, w) in self.grid.weights(star.pos).into_iter().flatten() {
+                self.grid.data[index] += star.mass * w;
             }
-
-            self.grid.add(i, j, star.mass * (1.0 - dx) * (1.0 - dy));
-            self.grid.add(i, j + 1, star.mass * (1.0 - dx) * dy);
-            self.grid.add(i + 1, j, star.mass * dx * (1.0 - dy));
-            self.grid.add(i + 1, j + 1, star.mass * dx * dy);
         }
 
         match &mut self.solver {
@@ -278,33 +207,15 @@ impl ParticleMesh {
             NodeSolver::Fft(solver) => solver.solve(&self.grid, &mut self.acc),
         }
 
-        let grid = &self.grid;
-        let acc = &self.acc;
+        let (grid, acc) = (&self.grid, &self.acc);
         self.stars.par_iter_mut().for_each(|star| {
-            let (i, j, dx, dy, ok) = grid.cell(star.pos[0], star.pos[1]);
-
-            if !ok {
-                return;
-            }
-
-            let weights = [
-                (i, j, (1.0 - dx) * (1.0 - dy)),
-                (i, j + 1, (1.0 - dx) * dy),
-                (i + 1, j, dx * (1.0 - dy)),
-                (i + 1, j + 1, dx * dy),
-            ];
-
-            for (ni, nj, w) in weights {
-                let node = acc[grid.index(ni, nj)];
-                star.vel[0] += w * node.0 * dt;
-                star.vel[1] += w * node.1 * dt;
+            for (index, w) in grid.weights(star.pos).into_iter().flatten() {
+                star.vel[0] += w * acc[index].0 * dt;
+                star.vel[1] += w * acc[index].1 * dt;
             }
         });
 
-        self.stars.par_iter_mut().skip(1).for_each(|s| {
-            s.pos[0] += 0.5 * s.vel[0] * dt;
-            s.pos[1] += 0.5 * s.vel[1] * dt;
-        });
+        drift_half(&mut self.stars, dt);
     }
 }
 
@@ -321,7 +232,6 @@ impl Simulation for ParticleMesh {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -334,8 +244,8 @@ mod tests {
 
     #[test]
     fn deposit() {
-        let stars = vec![star(10.0, 10.0, 1000.0), star(130.0, 160.0, 500.0), star(-10.0, 50.0, 1000.0)];
-        let mut pm = ParticleMesh::new(stars, 2, 100.0, 0.0, 0.0);
+        let stars = vec![star(-90.0, -90.0, 1000.0), star(30.0, 60.0, 500.0), star(-110.0, -50.0, 1000.0)];
+        let mut pm = ParticleMesh::new(stars, 2, 100.0);
         pm.update(0.1);
 
 
@@ -347,7 +257,7 @@ mod tests {
 
     #[test]
     fn fft_matches_pair_sum() {
-        let mut grid = Grid::new(20, 5.0, 0.0, 0.0);
+        let mut grid = Grid::new(20, 5.0);
         for (index, mass) in grid.data.iter_mut().enumerate() {
             *mass = (index % 7) as f32 * 10.0;
         }
@@ -376,7 +286,7 @@ mod tests {
             gap: 20.0,
             arms: 2,
         });
-        let mut pm = ParticleMesh::new_fft(stars.clone(), 127, 5.0, -317.5, -317.5);
+        let mut pm = ParticleMesh::new_fft(stars.clone(), 127, 5.0);
         let mut direct = CpuDirect::new(stars.clone());
         for _ in 0..10 {
             pm.update(0.004);

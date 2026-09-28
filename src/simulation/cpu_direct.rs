@@ -1,7 +1,7 @@
 use rayon::prelude::*;
 
 use crate::gpu::GpuContext;
-use crate::simulation::{EPS, G, Simulation};
+use crate::simulation::{EPS, G, Simulation, drift_half};
 use crate::star::Star;
 
 pub struct CpuDirect {
@@ -21,10 +21,7 @@ impl CpuDirect {
     pub fn update(&mut self, dt: f32) {
         let stars = &mut self.stars;
 
-        stars.par_iter_mut().skip(1).for_each(|s| {
-            s.pos[0] += 0.5 * s.vel[0] * dt;
-            s.pos[1] += 0.5 * s.vel[1] * dt;
-        });
+        drift_half(stars, dt);
 
         let acc: Vec<[f32; 2]> = stars
             .par_iter()
@@ -47,10 +44,7 @@ impl CpuDirect {
             s.vel[1] += a[1] * dt;
         });
 
-        stars.par_iter_mut().skip(1).for_each(|s| {
-            s.pos[0] += 0.5 * s.vel[0] * dt;
-            s.pos[1] += 0.5 * s.vel[1] * dt;
-        });
+        drift_half(stars, dt);
     }
 }
 

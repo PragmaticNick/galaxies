@@ -14,7 +14,6 @@ pub struct GalaxyConfig {
     pub star_mass: f32,
     pub star_radius: f32,
     pub gap: f32,
-    /// number of spiral arms
     pub arms: u32,
 }
 
@@ -22,25 +21,34 @@ const GAP_RAMP_WIDTH: f32 = 0.7;
 const EDGE_RAMP_WIDTH: f32 = 0.15;
 
 const WOLF_RAYET_FRACTION: f32 = 0.04;
-const WOLF_RAYET_COLOR: [f32; 3] = [0.6, 0.2, 1.0];
+const WOLF_RAYET_COLOR: [f32; 3] = [0.36, 0.12, 0.6];
 
 const ARM_TWIST: f32 = 2.5;
 const ARM_SPREAD: f32 = 0.55;
 const ARM_FRACTION: f32 = 0.45;
 
-fn gaussian(rng: &mut impl rand::RngExt) -> f32 {
+const SPECTRUM: [[f32; 3]; 7] = [
+    [0.55, 0.75, 1.0],
+    [0.65, 0.8, 1.0],
+    [0.85, 0.9, 1.0],
+    [1.0, 0.95, 0.8],
+    [1.0, 0.75, 0.25],
+    [1.0, 0.55, 0.2],
+    [1.0, 0.35, 0.2],
+];
+const SPECTRUM_BRIGHTNESS: f32 = 0.25;
+
+fn gaussian(rng: &mut impl RngExt) -> f32 {
     let u1: f32 = rng.random_range(1e-6f32..1.0);
-    let u2: f32 = rng.random::<f32>();
+    let u2: f32 = rng.random();
     (-2.0 * u1.ln()).sqrt() * (2.0 * PI * u2).cos()
 }
 
 fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
-    let t = ((x - edge0) / (edge1 - edge0).max(1e-6)).clamp(0.0, 1.0);
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
 }
 
-// Soft rejection-sampling weight so the disk fades in past the core gap and
-// fades out at the rim instead of being cut off sharply.
 fn radial_weight(r: f32, gap: f32, radius: f32) -> f32 {
     let gap_ramp = gap * GAP_RAMP_WIDTH;
     let edge_ramp = radius * EDGE_RAMP_WIDTH;
@@ -49,12 +57,18 @@ fn radial_weight(r: f32, gap: f32, radius: f32) -> f32 {
     inner * outer
 }
 
+fn spectrum_color(t: f32) -> [f32; 3] {
+    let x = t * (SPECTRUM.len() - 1) as f32;
+    let i = (x as usize).min(SPECTRUM.len() - 2);
+    let f = x - i as f32;
+    let (a, b) = (SPECTRUM[i], SPECTRUM[i + 1]);
+    [0, 1, 2].map(|c| (a[c] + (b[c] - a[c]) * f) * SPECTRUM_BRIGHTNESS)
+}
+
 pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Star> {
     let mut rng = rand::rng();
-
     let r_max = config.radius * (1.0 + EDGE_RAMP_WIDTH * 2.0);
 
-    // (r, phi, color) of every disk star
     let mut disk: Vec<(f32, f32, [f32; 3])> = (0..config.star_count)
         .map(|_| {
             let r = loop {
@@ -63,32 +77,28 @@ pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Star> {
                     break candidate;
                 }
             };
-            let t = (r / config.radius).clamp(0.0, 1.0);
+            let t = (r / config.radius).min(1.0);
 
             let phi = if rng.random::<f32>() < ARM_FRACTION {
-                let arm_index = rng.random_range(0..config.arms) as f32;
-                let arm_angle = arm_index * (2.0 * PI / config.arms as f32) + ARM_TWIST * t;
-                arm_angle + gaussian(&mut rng) * ARM_SPREAD
+                let arm = rng.random_range(0..config.arms) as f32;
+                arm * 2.0 * PI / config.arms as f32 + ARM_TWIST * t + gaussian(&mut rng) * ARM_SPREAD
             } else {
                 2.0 * PI * rng.random::<f32>()
             };
 
             let color = if rng.random::<f32>() < WOLF_RAYET_FRACTION {
-                // Rare, extremely hot star that has blown off its outer layers,
-                // exposing a violet-blue core far past the O-class end of the
-                // normal spectral gradient.
-                WOLF_RAYET_COLOR.map(|c| c * 0.6)
+                WOLF_RAYET_COLOR
             } else {
-                arm_color(t).map(|c| c * 0.25)
+                spectrum_color(t)
             };
 
             (r, phi, color)
         })
         .collect();
 
-    // sorted by radius, a star's index is the number of disk stars inside it
     disk.sort_by(|a, b| a.0.total_cmp(&b.0));
 
+    let [cx, cy] = config.center;
     let mut stars = vec![Star {
         pos: config.center,
         mass: config.core_mass,
@@ -103,10 +113,7 @@ pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Star> {
         let v = -(G * m_enclosed * r * r / softened).sqrt();
 
         stars.push(Star {
-            pos: [
-                config.center[0] + r * phi.cos(),
-                config.center[1] + r * phi.sin(),
-            ],
+            pos: [cx + r * phi.cos(), cy + r * phi.sin()],
             vel: [-phi.sin() * v, phi.cos() * v],
             mass: config.star_mass,
             radius: config.star_radius,
@@ -116,38 +123,4 @@ pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Star> {
     }
 
     stars
-}
-
-fn arm_color(t: f32) -> [f32; 3] {
-    // Full O-B-A-F-G-K-M spectral-class gradient, boosted to full saturation
-    // so it still reads as color once dimmed by the * 0.25 above.
-    const O_HOT: [f32; 3] = [0.55, 0.75, 1.0];
-    const B_BLUE: [f32; 3] = [0.65, 0.8, 1.0];
-    const A_WHITE: [f32; 3] = [0.85, 0.9, 1.0];
-    const F_YELLOW_WHITE: [f32; 3] = [1.0, 0.95, 0.8];
-    const G_SUN: [f32; 3] = [1.0, 0.75, 0.25];
-    const K_ORANGE: [f32; 3] = [1.0, 0.55, 0.2];
-    const M_COOL: [f32; 3] = [1.0, 0.35, 0.2];
-
-    let n = 6.0;
-    let seg = t.clamp(0.0, 1.0) * n;
-    let i = seg.min(n - 1.0).floor();
-    let f = seg - i;
-
-    match i as u32 {
-        0 => lerp(O_HOT, B_BLUE, f),
-        1 => lerp(B_BLUE, A_WHITE, f),
-        2 => lerp(A_WHITE, F_YELLOW_WHITE, f),
-        3 => lerp(F_YELLOW_WHITE, G_SUN, f),
-        4 => lerp(G_SUN, K_ORANGE, f),
-        _ => lerp(K_ORANGE, M_COOL, f),
-    }
-}
-
-fn lerp(a: [f32; 3], b: [f32; 3], s: f32) -> [f32; 3] {
-    [
-        a[0] + (b[0] - a[0]) * s,
-        a[1] + (b[1] - a[1]) * s,
-        a[2] + (b[2] - a[2]) * s,
-    ]
 }

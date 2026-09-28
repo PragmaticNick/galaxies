@@ -5,7 +5,6 @@ mod overlay;
 
 pub struct Renderer {
     pipeline: wgpu::RenderPipeline,
-    /// world units from the screen center to its top edge
     view_radius: f32,
     view_buffer: wgpu::Buffer,
     view_bind_group: wgpu::BindGroup,
@@ -41,7 +40,6 @@ impl Renderer {
         }
     }
 
-    /// Call after `GpuContext::resize`.
     pub fn resize(&self, gpu: &GpuContext) {
         gpu.write(&self.view_buffer, &view_scale(gpu, self.view_radius));
     }
@@ -64,8 +62,6 @@ impl Renderer {
     }
 }
 
-/// World to clip space scale: `view_radius` world units fill half the screen
-/// height, the width follows the aspect ratio.
 fn view_scale(gpu: &GpuContext, view_radius: f32) -> [f32; 2] {
     let aspect = gpu.config.width as f32 / gpu.config.height as f32;
     [1.0 / (view_radius * aspect), 1.0 / view_radius]

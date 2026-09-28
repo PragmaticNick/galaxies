@@ -1,4 +1,3 @@
-/// world to clip space scale
 @group(0) @binding(0) var<uniform> view_scale: vec2<f32>;
 
 struct Star {

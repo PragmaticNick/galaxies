@@ -26,10 +26,8 @@ const STRATEGY: Strategy = Strategy::GpuParticleMeshFft { size: 511, h: 5.0 };
 // const STRATEGY: Strategy = Strategy::ParticleMesh { size: 128, h: 10.0 };
 // const STRATEGY: Strategy = Strategy::GpuDirect;
 
-/// World units from the screen center to its top edge.
 const VIEW_RADIUS: f32 = 800.0;
 
-/// Simulated time per second of wall time.
 const TIME_SCALE: f32 = 0.1;
 
 const GALAXY: GalaxyConfig = GalaxyConfig {
@@ -43,12 +41,6 @@ const GALAXY: GalaxyConfig = GalaxyConfig {
     gap: 20.0,
     arms: 5,
 };
-
-/// Lower-left corner of a PM grid centered on the galaxy.
-fn grid_origin(size: i32, h: f32) -> (f32, f32) {
-    let half = size as f32 * h / 2.0;
-    (GALAXY.center[0] - half, GALAXY.center[1] - half)
-}
 
 struct Engine {
     gpu: GpuContext,
@@ -74,17 +66,10 @@ impl Engine {
         let simulation: Box<dyn Simulation> = match STRATEGY {
             Strategy::GpuDirect => Box::new(GpuDirect::new(&gpu, &star_buffer, stars.len())),
             Strategy::CpuDirect => Box::new(CpuDirect::new(stars)),
-            Strategy::ParticleMesh { size, h } => {
-                let (x0, y0) = grid_origin(size, h);
-                Box::new(ParticleMesh::new(stars, size, h, x0, y0))
-            }
-            Strategy::ParticleMeshFft { size, h } => {
-                let (x0, y0) = grid_origin(size, h);
-                Box::new(ParticleMesh::new_fft(stars, size, h, x0, y0))
-            }
+            Strategy::ParticleMesh { size, h } => Box::new(ParticleMesh::new(stars, size, h)),
+            Strategy::ParticleMeshFft { size, h } => Box::new(ParticleMesh::new_fft(stars, size, h)),
             Strategy::GpuParticleMeshFft { size, h } => {
-                let (x0, y0) = grid_origin(size, h);
-                Box::new(GpuParticleMesh::new(&gpu, &star_buffer, &stars, size, h, x0, y0))
+                Box::new(GpuParticleMesh::new(&gpu, &star_buffer, &stars, size, h))
             }
         };
 
