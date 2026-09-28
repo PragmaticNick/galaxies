@@ -8,7 +8,6 @@ pub struct Renderer {
     screen_buffer: wgpu::Buffer,
     screen_bind_group: wgpu::BindGroup,
     star_bind_group: wgpu::BindGroup,
-    galaxy_bind_group: wgpu::BindGroup,
     star_count: u32,
     overlay: TextOverlay,
 }
@@ -18,8 +17,6 @@ impl Renderer {
         gpu: &GpuContext,
         stars: &wgpu::Buffer,
         star_count: usize,
-        galaxy_radius: f32,
-        galaxy_center: [f32; 2],
         strategy_name: &str,
     ) -> Self {
         let shader = gpu
@@ -28,14 +25,11 @@ impl Renderer {
         let pipeline = gpu.render_pipeline(&shader, additive_blend());
 
         let screen_buffer = gpu.uniform_buffer(&screen_size(gpu));
-        let galaxy_buffer =
-            gpu.uniform_buffer(&[galaxy_center[0], galaxy_center[1], galaxy_radius, 0.0]);
         let layout = |group| pipeline.get_bind_group_layout(group);
 
         Self {
             screen_bind_group: gpu.bind_group(&layout(0), &[&screen_buffer]),
             star_bind_group: gpu.bind_group(&layout(1), &[stars]),
-            galaxy_bind_group: gpu.bind_group(&layout(2), &[&galaxy_buffer]),
             pipeline,
             screen_buffer,
             star_count: star_count as u32,
@@ -60,7 +54,6 @@ impl Renderer {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.screen_bind_group, &[]);
         pass.set_bind_group(1, &self.star_bind_group, &[]);
-        pass.set_bind_group(2, &self.galaxy_bind_group, &[]);
         pass.draw(0..self.star_count * 6, 0..1);
 
         self.overlay.draw(&mut pass);

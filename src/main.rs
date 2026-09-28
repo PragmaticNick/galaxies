@@ -22,10 +22,13 @@ mod star;
 
 const STRATEGY: Strategy = Strategy::ParticleMesh { size: 64, h: 10.0 };
 
+/// Simulated time per second of wall time.
+const TIME_SCALE: f32 = 0.1;
+
 const GALAXY: GalaxyConfig = GalaxyConfig {
     center: [0.0, 0.0],
-    radius: 200.0,
-    star_count: 100000,
+    radius: 400.0,
+    star_count: 50000,
     core_radius: 2.0,
     core_mass: 500000.0,
     star_mass: 10.0,
@@ -57,8 +60,6 @@ impl Engine {
             &gpu,
             &star_buffer,
             stars.len(),
-            GALAXY.radius,
-            GALAXY.center,
             STRATEGY.name(),
         );
         let simulation: Box<dyn Simulation> = match STRATEGY {
@@ -151,7 +152,8 @@ impl ApplicationHandler for App {
                 let now = Instant::now();
                 let dt = self
                     .last_frame
-                    .map_or(0.0, |t| (now - t).as_secs_f32().min(0.016));
+                    .map_or(0.0, |t| (now - t).as_secs_f32().min(0.016))
+                    * TIME_SCALE;
                 self.last_frame = Some(now);
                 engine.frame(dt);
             }

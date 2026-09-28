@@ -6,27 +6,11 @@ struct Star {
     mass: f32,
     radius: f32,
     _pad: vec2<f32>,
+    color: vec3<f32>,
+    _pad2: f32,
 };
 
 @group(1) @binding(0) var<storage, read> stars: array<Star>;
-
-struct GalaxyParams {
-    center: vec2<f32>,
-    radius: f32,
-};
-@group(2) @binding(0) var<uniform> galaxy: GalaxyParams;
-
-fn arm_color(t: f32) -> vec3<f32> {
-    let white = vec3<f32>(1.0, 1.0, 1.0);
-    let cyan = vec3<f32>(0.3, 0.85, 1.0);
-    let purple = vec3<f32>(0.6, 0.2, 0.9);
-
-    if (t < 0.5) {
-        return mix(white, cyan, t / 0.5);
-    } else {
-        return mix(cyan, purple, (t - 0.5) / 0.5);
-    }
-}
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -54,16 +38,10 @@ fn vs_main(@builtin(vertex_index) i: u32) -> VertexOutput {
 
     let world_pos = s.pos + local * s.radius;
 
-    let t = clamp(length(s.pos - galaxy.center) / galaxy.radius, 0.0, 1.0);
-    var color = arm_color(t) * 0.25;
-    if (star_index == 0u) {
-        color = vec3<f32>(1.0, 1.0, 1.0);
-    }
-
     var out: VertexOutput;
     out.clip_position = vec4<f32>(world_pos * 2.0 / screen_size, 0.0, 1.0);
     out.local = local;
-    out.color = color;
+    out.color = s.color;
 
     return out;
 }
