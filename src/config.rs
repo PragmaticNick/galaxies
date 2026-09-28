@@ -43,6 +43,7 @@ pub const HII_COLOR: [f32; 3] = [0.6, 0.08, 0.25];
 
 pub const LUMINOSITY_POWER: f32 = 2.5;
 pub const LUMINOSITY_MAX: f32 = 30.0;
+pub const LUMINOSITY_SIZE: f32 = 0.5;
 
 pub const VIEW_RADIUS: f32 = 800.0;
 pub const ZOOM_STEP: f32 = 0.9;
