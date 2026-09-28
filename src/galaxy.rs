@@ -14,6 +14,8 @@ pub struct GalaxyConfig {
     pub star_mass: f32,
     pub star_radius: f32,
     pub gap: f32,
+    /// number of spiral arms
+    pub arms: u32,
 }
 
 const GAP_RAMP_WIDTH: f32 = 0.7;
@@ -22,7 +24,6 @@ const EDGE_RAMP_WIDTH: f32 = 0.15;
 const WOLF_RAYET_FRACTION: f32 = 0.04;
 const WOLF_RAYET_COLOR: [f32; 3] = [0.6, 0.2, 1.0];
 
-const NUM_ARMS: u32 = 2;
 const ARM_TWIST: f32 = 2.5;
 const ARM_SPREAD: f32 = 0.55;
 const ARM_FRACTION: f32 = 0.45;
@@ -65,8 +66,8 @@ pub fn generate_galaxy(config: &GalaxyConfig) -> Vec<Star> {
             let t = (r / config.radius).clamp(0.0, 1.0);
 
             let phi = if rng.random::<f32>() < ARM_FRACTION {
-                let arm_index = rng.random_range(0..NUM_ARMS) as f32;
-                let arm_angle = arm_index * (2.0 * PI / NUM_ARMS as f32) + ARM_TWIST * t;
+                let arm_index = rng.random_range(0..config.arms) as f32;
+                let arm_angle = arm_index * (2.0 * PI / config.arms as f32) + ARM_TWIST * t;
                 arm_angle + gaussian(&mut rng) * ARM_SPREAD
             } else {
                 2.0 * PI * rng.random::<f32>()

@@ -186,6 +186,7 @@ mod tests {
                 star_mass: 500000.0 / star_count as f32,
                 star_radius: 1.5,
                 gap: 20.0,
+                arms: 2,
             };
             let stars = generate_galaxy(&galaxy);
             let buffer = gpu.storage_buffer(&stars);
@@ -229,6 +230,7 @@ mod tests {
             star_mass: 10.0,
             star_radius: 1.5,
             gap: 20.0,
+            arms: 2,
         };
         let stars = generate_galaxy(&galaxy);
         let (size, h) = (63, 8.0);

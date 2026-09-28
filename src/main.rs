@@ -41,6 +41,7 @@ const GALAXY: GalaxyConfig = GalaxyConfig {
     star_mass: 10.0,
     star_radius: 1.5,
     gap: 20.0,
+    arms: 2,
 };
 
 /// Lower-left corner of a PM grid centered on the galaxy.
@@ -185,6 +186,7 @@ fn compare_pm_with_direct() {
         star_mass: 10.0,
         star_radius: 1.5,
         gap: 10.0,
+        arms: 2,
     };
     let dt = 0.016;
     let steps = 20;
