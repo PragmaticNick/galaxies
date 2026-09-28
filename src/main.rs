@@ -26,6 +26,9 @@ const STRATEGY: Strategy = Strategy::GpuParticleMeshFft { size: 127, h: 10.0 };
 // const STRATEGY: Strategy = Strategy::ParticleMesh { size: 128, h: 10.0 };
 // const STRATEGY: Strategy = Strategy::GpuDirect;
 
+/// World units from the screen center to its top edge.
+const VIEW_RADIUS: f32 = 800.0;
+
 /// Simulated time per second of wall time.
 const TIME_SCALE: f32 = 0.1;
 
@@ -64,6 +67,7 @@ impl Engine {
             &gpu,
             &star_buffer,
             stars.len(),
+            VIEW_RADIUS,
             STRATEGY.name(),
         );
         let simulation: Box<dyn Simulation> = match STRATEGY {
