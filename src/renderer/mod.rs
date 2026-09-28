@@ -64,7 +64,7 @@ impl Renderer {
         let aspect = gpu.config.width as f32 / gpu.config.height as f32;
         let r = self.view_radius;
         let [cx, cy] = self.center;
-        gpu.write(&self.view_buffer, &[1.0 / (r * aspect), 1.0 / r, cx, cy, self.grid_half, 0.0, 0.0, 0.0]);
+        gpu.write(&self.view_buffer, &[1.0 / (r * aspect), 1.0 / r, cx, cy, self.grid_half, self.world_per_pixel(gpu), 0.0, 0.0]);
     }
 
     pub fn pan(&mut self, gpu: &GpuContext, dx: f32, dy: f32) {

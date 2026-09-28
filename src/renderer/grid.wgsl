@@ -2,6 +2,7 @@ struct View {
     scale: vec2<f32>,
     center: vec2<f32>,
     grid_half: f32,
+    world_per_pixel: f32,
 };
 
 @group(0) @binding(0) var<uniform> view: View;
