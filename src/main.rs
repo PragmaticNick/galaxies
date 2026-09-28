@@ -12,7 +12,9 @@ use winit::{
 use crate::galaxy::{GalaxyConfig, generate_galaxy};
 use crate::gpu::GpuContext;
 use crate::renderer::Renderer;
-use crate::simulation::{CpuDirect, GpuDirect, ParticleMesh, Simulation, Strategy};
+use crate::simulation::{
+    CpuDirect, GpuDirect, GpuParticleMesh, ParticleMesh, Simulation, Strategy,
+};
 
 mod galaxy;
 mod gpu;
@@ -20,7 +22,8 @@ mod renderer;
 mod simulation;
 mod star;
 
-const STRATEGY: Strategy = Strategy::ParticleMesh { size: 128, h: 10.0 };
+const STRATEGY: Strategy = Strategy::GpuParticleMeshFft { size: 127, h: 10.0 };
+// const STRATEGY: Strategy = Strategy::ParticleMesh { size: 128, h: 10.0 };
 // const STRATEGY: Strategy = Strategy::GpuDirect;
 
 /// Simulated time per second of wall time.
@@ -73,6 +76,10 @@ impl Engine {
             Strategy::ParticleMeshFft { size, h } => {
                 let (x0, y0) = grid_origin(size, h);
                 Box::new(ParticleMesh::new_fft(stars, size, h, x0, y0))
+            }
+            Strategy::GpuParticleMeshFft { size, h } => {
+                let (x0, y0) = grid_origin(size, h);
+                Box::new(GpuParticleMesh::new(&gpu, &star_buffer, &stars, size, h, x0, y0))
             }
         };
 

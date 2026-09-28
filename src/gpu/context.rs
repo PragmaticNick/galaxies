@@ -6,20 +6,15 @@ pub struct GpuContext {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub config: wgpu::SurfaceConfiguration,
-    surface: wgpu::Surface<'static>,
-    window: Arc<Window>,
+    /// None for a headless context (tests)
+    surface: Option<wgpu::Surface<'static>>,
+    window: Option<Arc<Window>>,
 }
 
 impl GpuContext {
     pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
         let size = window.inner_size();
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::PRIMARY,
-            flags: Default::default(),
-            memory_budget_thresholds: Default::default(),
-            backend_options: Default::default(),
-            display: Default::default(),
-        });
+        let instance = instance();
         let surface = instance.create_surface(window.clone())?;
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -55,28 +50,76 @@ impl GpuContext {
             device,
             queue,
             config,
-            surface,
-            window,
+            surface: Some(surface),
+            window: Some(window),
+        })
+    }
+
+    /// Compute-only context without a window, for tests.
+    #[cfg(test)]
+    pub async fn headless() -> anyhow::Result<Self> {
+        let adapter = instance()
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                compatible_surface: None,
+                force_fallback_adapter: false,
+            })
+            .await?;
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor::default())
+            .await?;
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format: wgpu::TextureFormat::Bgra8UnormSrgb,
+            width: 1,
+            height: 1,
+            present_mode: wgpu::PresentMode::Fifo,
+            alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            view_formats: vec![],
+            desired_maximum_frame_latency: 2,
+        };
+
+        Ok(Self {
+            device,
+            queue,
+            config,
+            surface: None,
+            window: None,
         })
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
-        if width > 0 && height > 0 {
+        if let Some(surface) = &self.surface
+            && width > 0
+            && height > 0
+        {
             self.config.width = width;
             self.config.height = height;
-            self.surface.configure(&self.device, &self.config);
+            surface.configure(&self.device, &self.config);
         }
     }
 
     pub fn request_redraw(&self) {
-        self.window.request_redraw();
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
     }
 
     pub fn acquire(&self) -> Option<wgpu::SurfaceTexture> {
-        match self.surface.get_current_texture() {
+        match self.surface.as_ref()?.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t)
             | wgpu::CurrentSurfaceTexture::Suboptimal(t) => Some(t),
             _ => None,
         }
     }
+}
+
+fn instance() -> wgpu::Instance {
+    wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::PRIMARY,
+        flags: Default::default(),
+        memory_budget_thresholds: Default::default(),
+        backend_options: Default::default(),
+        display: Default::default(),
+    })
 }

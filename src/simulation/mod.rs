@@ -2,10 +2,12 @@ use crate::gpu::GpuContext;
 
 mod cpu_direct;
 mod gpu_direct;
+mod gpu_particle_mesh;
 mod particle_mesh;
 
 pub use cpu_direct::CpuDirect;
 pub use gpu_direct::GpuDirect;
+pub use gpu_particle_mesh::GpuParticleMesh;
 pub use particle_mesh::ParticleMesh;
 
 pub const G: f32 = 100.0;
@@ -24,6 +26,10 @@ pub enum Strategy {
         size: i32,
         h: f32,
     },
+    GpuParticleMeshFft {
+        size: i32,
+        h: f32,
+    },
 }
 
 impl Strategy {
@@ -33,6 +39,7 @@ impl Strategy {
             Strategy::CpuDirect => "cpu direct",
             Strategy::ParticleMesh { .. } => "particle mesh",
             Strategy::ParticleMeshFft { .. } => "particle mesh fft",
+            Strategy::GpuParticleMeshFft { .. } => "gpu particle mesh fft",
         }
     }
 }

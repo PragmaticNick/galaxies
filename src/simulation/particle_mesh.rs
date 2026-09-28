@@ -78,34 +78,45 @@ struct FftSolver {
     transposed: Vec<Complex32>,
 }
 
+/// FFT of the node gravity kernel for a grid of `size` cells with spacing
+/// `h`, and its padded side length p (see `FftSolver::p`). Row index is the
+/// x offset, column index the y offset.
+pub(crate) fn fft_kernel(size: i32, h: f32) -> (usize, Vec<Complex32>) {
+    let n = (size + 1) as usize;
+    let p = (2 * n - 1).next_power_of_two();
+
+    let mut kernel = vec![Complex32::ZERO; p * p];
+
+    // acc[t] = Σ m[s] · F(s - t), F = pull towards s. As a convolution
+    // over u = t - s the kernel is F(-u) = -F(u).
+    let reach = n as i32 - 1;
+    for ui in -reach..=reach {
+        for uj in -reach..=reach {
+            let dx = ui as f32 * h;
+            let dy = uj as f32 * h;
+            let r2 = dx * dx + dy * dy + EPS * EPS;
+            let k = -G / (r2 * r2.sqrt());
+
+            let wi = ui.rem_euclid(p as i32) as usize;
+            let wj = uj.rem_euclid(p as i32) as usize;
+            kernel[wi * p + wj] = Complex32::new(k * dx, k * dy);
+        }
+    }
+
+    let forward = FftPlanner::new().plan_fft_forward(p);
+    let mut transposed = vec![Complex32::ZERO; p * p];
+    fft_2d(&forward, &mut kernel, &mut transposed, p);
+
+    (p, kernel)
+}
+
 impl FftSolver {
     fn new(grid: &Grid) -> Self {
-        let n = (grid.size + 1) as usize;
-        let p = (2 * n - 1).next_power_of_two();
+        let (p, kernel) = fft_kernel(grid.size, grid.h);
 
         let mut planner = FftPlanner::new();
         let forward = planner.plan_fft_forward(p);
         let inverse = planner.plan_fft_inverse(p);
-
-        let mut kernel = vec![Complex32::ZERO; p * p];
-        let mut transposed = vec![Complex32::ZERO; p * p];
-
-        // acc[t] = Σ m[s] · F(s - t), F = pull towards s. As a convolution
-        // over u = t - s the kernel is F(-u) = -F(u).
-        let reach = n as i32 - 1;
-        for ui in -reach..=reach {
-            for uj in -reach..=reach {
-                let dx = ui as f32 * grid.h;
-                let dy = uj as f32 * grid.h;
-                let r2 = dx * dx + dy * dy + EPS * EPS;
-                let k = -G / (r2 * r2.sqrt());
-
-                let wi = ui.rem_euclid(p as i32) as usize;
-                let wj = uj.rem_euclid(p as i32) as usize;
-                kernel[wi * p + wj] = Complex32::new(k * dx, k * dy);
-            }
-        }
-        fft_2d(&forward, &mut kernel, &mut transposed, p);
 
         Self {
             p,
@@ -113,7 +124,7 @@ impl FftSolver {
             inverse,
             kernel,
             buffer: vec![Complex32::ZERO; p * p],
-            transposed,
+            transposed: vec![Complex32::ZERO; p * p],
         }
     }
 
