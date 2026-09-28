@@ -1,4 +1,4 @@
-@group(0) @binding(0) var<uniform> view_scale: vec2<f32>;
+@group(0) @binding(0) var<uniform> view: vec4<f32>;
 
 struct Star {
     pos: vec2<f32>,
@@ -39,7 +39,7 @@ fn vs_main(@builtin(vertex_index) i: u32) -> VertexOutput {
     let world_pos = s.pos + local * s.radius;
 
     var out: VertexOutput;
-    out.clip_position = vec4<f32>(world_pos * view_scale, 0.0, 1.0);
+    out.clip_position = vec4<f32>(world_pos * view.xy, 0.0, 1.0);
     out.local = local;
     out.color = s.color;
 

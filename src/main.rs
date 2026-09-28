@@ -61,6 +61,7 @@ impl Engine {
             &star_buffer,
             stars.len(),
             VIEW_RADIUS,
+            STRATEGY.grid_half(),
             STRATEGY.name(),
         );
         let simulation: Box<dyn Simulation> = match STRATEGY {

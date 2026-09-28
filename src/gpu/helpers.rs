@@ -99,6 +99,7 @@ impl GpuContext {
         &self,
         shader: &wgpu::ShaderModule,
         blend: wgpu::BlendState,
+        topology: wgpu::PrimitiveTopology,
     ) -> wgpu::RenderPipeline {
         self.device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -121,6 +122,7 @@ impl GpuContext {
                     compilation_options: Default::default(),
                 }),
                 primitive: wgpu::PrimitiveState {
+                    topology,
                     cull_mode: Some(wgpu::Face::Back),
                     ..Default::default()
                 },

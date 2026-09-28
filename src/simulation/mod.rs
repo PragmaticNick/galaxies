@@ -45,6 +45,15 @@ impl Strategy {
             Strategy::GpuParticleMeshFft { .. } => "gpu particle mesh fft",
         }
     }
+
+    pub fn grid_half(self) -> Option<f32> {
+        match self {
+            Strategy::ParticleMesh { size, h }
+            | Strategy::ParticleMeshFft { size, h }
+            | Strategy::GpuParticleMeshFft { size, h } => Some(size as f32 * h / 2.0),
+            _ => None,
+        }
+    }
 }
 
 pub fn drift_half(stars: &mut [Star], dt: f32) {

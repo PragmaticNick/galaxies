@@ -5,7 +5,9 @@ mod overlay;
 
 pub struct Renderer {
     pipeline: wgpu::RenderPipeline,
+    grid: Option<(wgpu::RenderPipeline, wgpu::BindGroup)>,
     view_radius: f32,
+    grid_half: f32,
     view_buffer: wgpu::Buffer,
     view_bind_group: wgpu::BindGroup,
     star_bind_group: wgpu::BindGroup,
@@ -19,21 +21,35 @@ impl Renderer {
         stars: &wgpu::Buffer,
         star_count: usize,
         view_radius: f32,
+        grid_half: Option<f32>,
         strategy_name: &str,
     ) -> Self {
         let shader = gpu
             .device
             .create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
-        let pipeline = gpu.render_pipeline(&shader, additive_blend());
+        let pipeline =
+            gpu.render_pipeline(&shader, additive_blend(), wgpu::PrimitiveTopology::TriangleList);
 
-        let view_buffer = gpu.uniform_buffer(&view_scale(gpu, view_radius));
+        let view_buffer = gpu.uniform_buffer(&view_params(gpu, view_radius, grid_half.unwrap_or(0.0)));
         let layout = |group| pipeline.get_bind_group_layout(group);
+
+        let grid = grid_half.map(|_| {
+            let shader = gpu
+                .device
+                .create_shader_module(wgpu::include_wgsl!("grid.wgsl"));
+            let pipeline =
+                gpu.render_pipeline(&shader, additive_blend(), wgpu::PrimitiveTopology::LineList);
+            let bind_group = gpu.bind_group(&pipeline.get_bind_group_layout(0), &[&view_buffer]);
+            (pipeline, bind_group)
+        });
 
         Self {
             view_bind_group: gpu.bind_group(&layout(0), &[&view_buffer]),
             star_bind_group: gpu.bind_group(&layout(1), &[stars]),
             pipeline,
+            grid,
             view_radius,
+            grid_half: grid_half.unwrap_or(0.0),
             view_buffer,
             star_count: star_count as u32,
             overlay: TextOverlay::new(gpu, star_count, strategy_name),
@@ -41,7 +57,7 @@ impl Renderer {
     }
 
     pub fn resize(&self, gpu: &GpuContext) {
-        gpu.write(&self.view_buffer, &view_scale(gpu, self.view_radius));
+        gpu.write(&self.view_buffer, &view_params(gpu, self.view_radius, self.grid_half));
     }
 
     pub fn draw(
@@ -58,13 +74,19 @@ impl Renderer {
         pass.set_bind_group(1, &self.star_bind_group, &[]);
         pass.draw(0..self.star_count * 6, 0..1);
 
+        if let Some((pipeline, bind_group)) = &self.grid {
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, bind_group, &[]);
+            pass.draw(0..8, 0..1);
+        }
+
         self.overlay.draw(&mut pass);
     }
 }
 
-fn view_scale(gpu: &GpuContext, view_radius: f32) -> [f32; 2] {
+fn view_params(gpu: &GpuContext, view_radius: f32, grid_half: f32) -> [f32; 4] {
     let aspect = gpu.config.width as f32 / gpu.config.height as f32;
-    [1.0 / (view_radius * aspect), 1.0 / view_radius]
+    [1.0 / (view_radius * aspect), 1.0 / view_radius, grid_half, 0.0]
 }
 
 fn additive_blend() -> wgpu::BlendState {
