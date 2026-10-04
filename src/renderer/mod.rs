@@ -8,14 +8,15 @@ use glyphon::{
 use wgpu::util::DeviceExt as _;
 use winit::window::Window;
 
+use crate::renderer::background::Background;
 use crate::renderer::camera::CameraUniform;
 use crate::renderer::fps::FpsCounter;
+use crate::settings::WORKGROUP_SIZE;
 use crate::star::Star;
 
+mod background;
 mod camera;
 mod fps;
-
-const WORKGROUP_SIZE: usize = 256;
 
 pub struct Renderer {
     surface: wgpu::Surface<'static>,
@@ -25,6 +26,7 @@ pub struct Renderer {
     is_surface_configured: bool,
     window: Arc<Window>,
 
+    background: Background,
     render_pipeline: wgpu::RenderPipeline,
     drift_pipeline: wgpu::ComputePipeline,
     kick_pipeline: wgpu::ComputePipeline,
@@ -32,12 +34,9 @@ pub struct Renderer {
 
     star_render_bind_group: wgpu::BindGroup,
     star_compute_bind_group: wgpu::BindGroup,
-    sim_render_bind_group: wgpu::BindGroup,
     sim_buffer: wgpu::Buffer,
     eps: f32,
     g: f32,
-    radius: f32,
-    center: [f32; 2],
 
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
@@ -60,8 +59,6 @@ impl Renderer {
         stars: &[Star],
         eps: f32,
         g: f32,
-        radius: f32,
-        center: [f32; 2],
     ) -> anyhow::Result<Self> {
         let (surface, device, queue, config) = init_wgpu(window.clone()).await?;
         let (camera_uniform, camera_buffer) = init_camera(&device, config.width, config.height);
@@ -69,11 +66,12 @@ impl Renderer {
 
         let sim_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Sim Params Buffer"),
-            size: 32,
+            size: 16,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
+        let background = Background::new(&device, config.format);
         let render_pipeline = init_pipeline(&device, config.format);
         let (compute_bind_group_layout, drift_pipeline, kick_pipeline, commit_pipeline) =
             init_compute_pipelines(&device);
@@ -89,12 +87,6 @@ impl Renderer {
             "Star Render Bind Group",
             &render_pipeline.get_bind_group_layout(1),
             &star_buffer,
-        );
-        let sim_render_bind_group = buffer_bind_group(
-            &device,
-            "Sim Render Bind Group",
-            &render_pipeline.get_bind_group_layout(2),
-            &sim_buffer,
         );
         let star_compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Star Compute Bind Group"),
@@ -124,15 +116,13 @@ impl Renderer {
             drift_pipeline,
             kick_pipeline,
             commit_pipeline,
+            background,
             render_pipeline,
             star_render_bind_group,
             star_compute_bind_group,
-            sim_render_bind_group,
             sim_buffer,
             eps,
             g,
-            radius,
-            center,
             camera_uniform,
             camera_buffer,
             camera_bind_group,
@@ -178,17 +168,10 @@ impl Renderer {
         self.queue.write_buffer(
             &self.sim_buffer,
             0,
-            bytemuck::cast_slice(&[
-                dt,
-                self.eps,
-                self.g,
-                self.radius,
-                self.center[0],
-                self.center[1],
-                0.0,
-                0.0,
-            ]),
+            bytemuck::cast_slice(&[dt, self.eps, self.g, 0.0]),
         );
+        self.background
+            .prepare(&self.queue, self.config.width, self.config.height);
 
         let output = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t)
@@ -204,7 +187,7 @@ impl Renderer {
                 label: Some("Frame Encoder"),
             });
         {
-            let workgroup_count = star_count.div_ceil(WORKGROUP_SIZE) as u32;
+            let workgroup_count = (star_count as u32).div_ceil(WORKGROUP_SIZE);
             let dispatches = [
                 &self.drift_pipeline,
                 &self.kick_pipeline,
@@ -229,7 +212,7 @@ impl Renderer {
                     resolve_target: None,
                     depth_slice: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        load: wgpu::LoadOp::Clear(self.background.clear_color()),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -239,10 +222,11 @@ impl Renderer {
                 multiview_mask: None,
             });
 
+            self.background.draw(&mut pass);
+
             pass.set_pipeline(&self.render_pipeline);
             pass.set_bind_group(0, &self.camera_bind_group, &[]);
             pass.set_bind_group(1, &self.star_render_bind_group, &[]);
-            pass.set_bind_group(2, &self.sim_render_bind_group, &[]);
             pass.draw(0..(star_count * 6) as u32, 0..1);
 
             self.text_renderer
@@ -501,7 +485,10 @@ fn init_compute_pipelines(
             layout: Some(&pipeline_layout),
             module: &shader,
             entry_point: Some(entry),
-            compilation_options: Default::default(),
+            compilation_options: wgpu::PipelineCompilationOptions {
+                constants: &[("WORKGROUP_SIZE", WORKGROUP_SIZE as f64)],
+                ..Default::default()
+            },
             cache: Default::default(),
         })
     };

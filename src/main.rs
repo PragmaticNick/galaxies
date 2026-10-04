@@ -2,8 +2,8 @@ use winit::event_loop::EventLoop;
 
 mod app;
 pub mod galaxy;
-mod physics;
 mod renderer;
+mod settings;
 pub mod star;
 
 pub fn run() -> anyhow::Result<()> {

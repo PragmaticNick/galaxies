@@ -8,38 +8,23 @@ use winit::{
     window::{Fullscreen, Window},
 };
 
-use crate::galaxy::{GalaxyConfig, generate_galaxy};
-use crate::physics::{DT, EPS, G};
+use crate::galaxy::generate_galaxy;
 use crate::renderer::Renderer;
+use crate::settings::{DT, EPS, G, GALAXY};
 use crate::star::Star;
 
 pub struct App {
     renderer: Option<Renderer>,
     stars: Vec<Star>,
-
-    radius: f32,
-    center: [f32; 2],
 }
 
 impl App {
     pub fn new() -> Self {
-        let config = GalaxyConfig {
-            center: [0.0, 0.0],
-            radius: 400.0,
-            star_count: 100000,
-            core_radius: 2.0,
-            core_mass: 500000.0,
-            star_mass: 10.0,
-            star_radius: 1.5,
-            gap: 20.0,
-        };
-        let stars = generate_galaxy(&config, EPS, G);
+        let stars = generate_galaxy(&GALAXY, EPS, G);
 
         Self {
             renderer: None,
             stars,
-            radius: config.radius,
-            center: config.center,
         }
     }
 
@@ -62,8 +47,6 @@ impl ApplicationHandler for App {
                 &self.stars,
                 EPS,
                 G,
-                self.radius,
-                self.center,
             ))
             .unwrap(),
         );
