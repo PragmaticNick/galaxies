@@ -33,7 +33,6 @@ pub struct Renderer {
     star_render_bind_group: wgpu::BindGroup,
     star_compute_bind_group: wgpu::BindGroup,
     sim_render_bind_group: wgpu::BindGroup,
-    compute_bind_group_layout: wgpu::BindGroupLayout,
     sim_buffer: wgpu::Buffer,
     eps: f32,
     g: f32,
@@ -52,7 +51,6 @@ pub struct Renderer {
     fps_buffer: Buffer,
     fps_counter: FpsCounter,
     last_fps: f32,
-    preset_name: String,
     force_text_update: bool,
 }
 
@@ -64,7 +62,6 @@ impl Renderer {
         g: f32,
         radius: f32,
         center: [f32; 2],
-        preset_name: &str,
     ) -> anyhow::Result<Self> {
         let (surface, device, queue, config) = init_wgpu(window.clone()).await?;
         let (camera_uniform, camera_buffer) = init_camera(&device, config.width, config.height);
@@ -131,7 +128,6 @@ impl Renderer {
             star_render_bind_group,
             star_compute_bind_group,
             sim_render_bind_group,
-            compute_bind_group_layout,
             sim_buffer,
             eps,
             g,
@@ -148,7 +144,6 @@ impl Renderer {
             fps_buffer,
             fps_counter: FpsCounter::new(),
             last_fps: 0.0,
-            preset_name: preset_name.to_string(),
             force_text_update: true,
         })
     }
@@ -170,42 +165,6 @@ impl Renderer {
 
     pub fn request_redraw(&self) {
         self.window.request_redraw();
-    }
-
-    pub fn set_stars(&mut self, stars: &[Star]) {
-        let star_buffer = init_star_buffer(&self.device, &self.queue, stars);
-        self.star_render_bind_group = buffer_bind_group(
-            &self.device,
-            "Star Render Bind Group",
-            &self.render_pipeline.get_bind_group_layout(1),
-            &star_buffer,
-        );
-        self.star_compute_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Star Compute Bind Group"),
-            layout: &self.compute_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: star_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: self.sim_buffer.as_entire_binding(),
-                },
-            ],
-        });
-    }
-
-    pub fn set_physics(&mut self, eps: f32, g: f32, radius: f32, center: [f32; 2]) {
-        self.eps = eps;
-        self.g = g;
-        self.radius = radius;
-        self.center = center;
-    }
-
-    pub fn set_preset_name(&mut self, name: &str) {
-        self.preset_name = name.to_string();
-        self.force_text_update = true;
     }
 
     pub fn render(&mut self, star_count: usize, dt: f32) -> anyhow::Result<()> {
@@ -309,8 +268,8 @@ impl Renderer {
         if fps_changed || self.force_text_update {
             self.force_text_update = false;
             let text = format!(
-                "FPS: {:.0}\nStars: {}\nStrategy: gpu\nPreset: {}",
-                self.last_fps, star_count, self.preset_name
+                "FPS: {:.0}\nStars: {}\nStrategy: gpu",
+                self.last_fps, star_count
             );
             self.fps_buffer.set_text(
                 &mut self.font_system,

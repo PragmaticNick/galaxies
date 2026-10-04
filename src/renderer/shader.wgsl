@@ -24,16 +24,22 @@ struct SimParams {
 };
 @group(2) @binding(0) var<uniform> sim: SimParams;
 
-fn arm_color(t: f32) -> vec3<f32> {
-    let white = vec3<f32>(1.0, 1.0, 1.0);
-    let cyan = vec3<f32>(0.3, 0.85, 1.0);
-    let purple = vec3<f32>(0.6, 0.2, 0.9);
+// Radial palette sampled from galaxy.jpg: blue-white core, gold ring, orange-pink rim.
+const PALETTE_STEPS: u32 = 6u;
+const PALETTE: array<vec3<f32>, 6> = array<vec3<f32>, 6>(
+    vec3<f32>(0.80, 0.85, 1.00), // t = 0.0  blue-white core
+    vec3<f32>(0.88, 0.89, 1.00), // t = 0.2
+    vec3<f32>(1.00, 0.92, 0.80), // t = 0.4  warm white
+    vec3<f32>(1.00, 0.82, 0.45), // t = 0.6  gold
+    vec3<f32>(1.00, 0.66, 0.40), // t = 0.8  orange
+    vec3<f32>(1.00, 0.58, 0.62), // t = 1.0  salmon-pink rim
+);
 
-    if (t < 0.5) {
-        return mix(white, cyan, t / 0.5);
-    } else {
-        return mix(cyan, purple, (t - 0.5) / 0.5);
-    }
+fn arm_color(t: f32) -> vec3<f32> {
+    let x = t * f32(PALETTE_STEPS - 1u);
+    let i = min(u32(x), PALETTE_STEPS - 2u);
+    var palette = PALETTE;
+    return mix(palette[i], palette[i + 1u], x - f32(i));
 }
 
 struct VertexOutput {
