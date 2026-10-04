@@ -1,27 +1,41 @@
 use crate::galaxy::GalaxyConfig;
 use crate::simulation::Strategy;
 
-pub const STRATEGY: Strategy = Strategy::GpuParticleMeshFft { size: 1023, h: 5.0 };
+pub const STRATEGY: Strategy = Strategy::GpuParticleMeshFft { size: 1023, h: 15.0 };
 // pub const STRATEGY: Strategy = Strategy::ParticleMesh { size: 128, h: 10.0 };
 // pub const STRATEGY: Strategy = Strategy::GpuDirect;
 
 pub const G: f32 = 100.0;
-pub const EPS: f32 = 80.0;
-pub const TIME_SCALE: f32 = 0.5;
+pub const EPS: f32 = 15.0;
+pub const TIME_SCALE: f32 = 0.3;
 
 pub const GALAXIES: &[GalaxyConfig] = &[
     GalaxyConfig {
-        center: [0.0, 0.0],
+        center: [-500.0, -500.0],
         velocity: [0.0, 0.0],
-        radius: 400.0,
-        star_count: 2500000,
+        radius: 500.0,
+        star_count: 4999999,
         core_radius: 2.0,
         core_mass: 500000.0,
-        star_mass: 0.1,
+        star_mass: 0.025,
         star_radius: 0.5,
         gap: 20.0,
-        arms: 5,
-        clusters: 100,
+        arms: 7,
+        clusters: 0,
+        cluster_mass: 5000.0,
+    },
+    GalaxyConfig {
+        center: [500.0, 500.0],
+        velocity: [0.0, 0.0],
+        radius: 500.0,
+        star_count: 4999999,
+        core_radius: 2.0,
+        core_mass: 500000.0,
+        star_mass: 0.025,
+        star_radius: 0.5,
+        gap: 20.0,
+        arms: 7,
+        clusters: 0,
         cluster_mass: 5000.0,
     },
 ];
@@ -29,8 +43,8 @@ pub const GALAXIES: &[GalaxyConfig] = &[
 pub const GAP_RAMP_WIDTH: f32 = 0.7;
 pub const EDGE_RAMP_WIDTH: f32 = 0.15;
 
-pub const ARM_TWIST: f32 = 2.5;
-pub const ARM_SPREAD: f32 = 0.55;
+pub const ARM_TWIST: f32 = 5.0;
+pub const ARM_SPREAD: f32 = 0.4;
 pub const ARM_FRACTION: f32 = 0.45;
 
 pub const BULGE_RADIUS: f32 = 0.25;
@@ -52,6 +66,8 @@ pub const CLUSTER_COLOR: [f32; 3] = [2.0, 2.0, 2.0];
 
 pub const VIEW_RADIUS: f32 = 800.0;
 pub const ZOOM_STEP: f32 = 0.9;
+pub const PAN_SPEED: f32 = 0.8;
+pub const ZOOM_SPEED: f32 = 2.5;
 
 pub const MIN_RADIUS_PX: f32 = 1.0;
 pub const GLOW_SIZE: f32 = 3.0;
@@ -59,7 +75,7 @@ pub const GLOW_STRENGTH: f32 = 0.3;
 pub const EXPOSURE: f32 = 0.4;
 pub const BLOOM_STRENGTH: f32 = 0.3;
 pub const BLOOM_LEVELS: u32 = 6;
-pub const SHOW_OVERLAY: bool = false;
+pub const SHOW_OVERLAY: bool = true;
 pub const SHOW_GRID: bool = false;
 pub const GRID_BRIGHTNESS: f32 = 0.3;
 pub const GRID_CELL_BRIGHTNESS: f32 = 0.05;

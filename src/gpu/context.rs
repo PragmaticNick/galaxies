@@ -74,7 +74,9 @@ async fn request_device(
             force_fallback_adapter: false,
         })
         .await?;
-    let (device, queue) = adapter.request_device(&Default::default()).await?;
+    let (device, queue) = adapter
+        .request_device(&wgpu::DeviceDescriptor { required_limits: adapter.limits(), ..Default::default() })
+        .await?;
     Ok((adapter, device, queue))
 }
 

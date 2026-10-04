@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -9,7 +10,9 @@ use winit::{
     window::{Fullscreen, Window, WindowId},
 };
 
-use crate::config::{GALAXIES, SHOW_GRID, STRATEGY, TIME_SCALE, VIEW_RADIUS, ZOOM_STEP};
+use crate::config::{
+    GALAXIES, PAN_SPEED, SHOW_GRID, STRATEGY, TIME_SCALE, VIEW_RADIUS, ZOOM_SPEED, ZOOM_STEP,
+};
 use crate::galaxy::generate_galaxy;
 use crate::gpu::GpuContext;
 use crate::renderer::Renderer;
@@ -92,6 +95,7 @@ struct App {
     last_frame: Option<Instant>,
     cursor: [f32; 2],
     dragging: bool,
+    held: HashSet<KeyCode>,
 }
 
 impl ApplicationHandler for App {
@@ -127,6 +131,17 @@ impl ApplicationHandler for App {
                     },
                 ..
             } => event_loop.exit(),
+            WindowEvent::KeyboardInput {
+                event: KeyEvent { physical_key: PhysicalKey::Code(code), state, .. },
+                ..
+            } => {
+                if state.is_pressed() {
+                    self.held.insert(code);
+                } else {
+                    self.held.remove(&code);
+                }
+            }
+            WindowEvent::Focused(false) => self.held.clear(),
             WindowEvent::Resized(size) => {
                 engine.gpu.resize(size.width, size.height);
                 engine.renderer.resize(&engine.gpu);
@@ -151,15 +166,30 @@ impl ApplicationHandler for App {
             }
             WindowEvent::RedrawRequested => {
                 let now = Instant::now();
-                let dt = self
-                    .last_frame
-                    .map_or(0.0, |t| (now - t).as_secs_f32().min(0.016))
-                    * TIME_SCALE;
+                let real_dt = self.last_frame.map_or(0.0, |t| (now - t).as_secs_f32().min(0.1));
                 self.last_frame = Some(now);
-                engine.frame(dt);
+                move_camera(engine, &self.held, real_dt);
+                engine.frame(real_dt.min(0.016) * TIME_SCALE);
             }
             _ => {}
         }
+    }
+}
+
+fn move_camera(engine: &mut Engine, held: &HashSet<KeyCode>, dt: f32) {
+    let axis = |pos, neg| held.contains(&pos) as i32 as f32 - held.contains(&neg) as i32 as f32;
+    let (x, y) = (axis(KeyCode::KeyD, KeyCode::KeyA), axis(KeyCode::KeyW, KeyCode::KeyS));
+    let zoom = axis(KeyCode::ArrowUp, KeyCode::ArrowDown);
+
+    let gpu = &engine.gpu;
+    if x != 0.0 || y != 0.0 {
+        // pan() follows drag semantics (content moves with the cursor), so invert x.
+        let px = PAN_SPEED * gpu.config.height as f32 * dt;
+        engine.renderer.pan(gpu, -x * px, y * px);
+    }
+    if zoom != 0.0 {
+        let center = [gpu.config.width as f32 / 2.0, gpu.config.height as f32 / 2.0];
+        engine.renderer.zoom(gpu, ZOOM_SPEED.powf(-zoom * dt), center);
     }
 }
 
