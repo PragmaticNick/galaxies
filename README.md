@@ -19,5 +19,5 @@ Needs a GPU with Vulkan, DirectX 12 or Metal. The window opens fullscreen.
 
 ## Settings
 
-Everything is in `src/config.rs`: the galaxies ,star count, grid size,
+Everything is in `src/config.rs`: the galaxies, star count, grid size,
 gravity softening, time scale, colors and the look of the renderer.
